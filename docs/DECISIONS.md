@@ -678,3 +678,40 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   403 `sheet_forbidden` or 404 `sheet_not_found`, instead of a generic 500.
   - `describe` falls back to the static readback (`live: false`) when the sheet can't be read.
   - The preview offers a Retry button.
+
+### Approval queues the first run (owner decision, 2026-09-18)
+- **Decision:** approving a config on the Approvals page queues exactly one run, which applies the
+  changes the preview showed. It replaced the proposed "Run now" button.
+- **Why (the owner's reasoning):**
+  - The preview above the Approve button is the consent. The write it authorizes is exactly the
+    one previewed, so asking for a second click asks again for consent already given.
+  - If Approve doesn't produce the previewed changes, the preview looks like it lied.
+    (Seen live: sheet 3's v1 was approved with 6 changes previewed, and nothing happened until
+    an edit.)
+  - At a 300-sheet rollout, "approve, then click Run on each" is the busywork the product exists
+    to remove.
+- **Why it's safe:** the run plans from a fresh read (not from the preview), the stale-read
+  guard covers edits made in between, and it's recorded and undoable like any other run.
+  `approve_config` clears the sheet's fingerprint, so a re-approval runs for real instead of
+  turning into a NOOP.
+- **Scope rule: "a shown preview earns an auto-run", not "activation means write".**
+  - Only `POST /configs/{id}/approve`, the page flow with the preview shown, queues the run.
+  - `registry.approve_config` never runs anything, so a future path that activates a config
+    without a preview gets no automatic write.
+  - The CLI `register`/`enroll` keep their current behaviour: they print the plan and the
+    `cli.py run` command.
+- **Mechanics:**
+  - The API enqueues `run_sheet_job(sheet_id, "approval")` on the same `runs` queue the watcher
+    uses. The per-sheet lock and the BUSY re-arm apply unchanged.
+  - A `run.queued` event (trigger, config_version, job id) records that the run was queued.
+  - `GET /configs/{id}` returns `first_run`, derived from the DB:
+    - `null` when no approval run was queued;
+    - `queued` until the first run under that version is recorded;
+    - then `done`, with its status and rows affected.
+  - The page shows "Applying the changes now…", followed by the outcome.
+  - Enqueueing is best effort after the approval commits. If Redis is down, the approval still
+    stands, the failure is logged without values, `first_run` stays null, and the watcher applies
+    the config on the next edit.
+- **Fixed alongside:** rule-level run rows always recorded `trigger_type` "change", the engine's
+  event kind, even for `cli.py run` (manual). `record_runs` now records the trigger that started
+  the job.

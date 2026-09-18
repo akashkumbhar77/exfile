@@ -216,6 +216,49 @@ def test_describe_preview_and_approve_with_owner_title(api: Harness, caplog: pyt
     assert again.status_code == 409 and again.json()["error"]["code"] == "conflict"
 
 
+def test_approval_queues_one_run_that_applies_the_previewed_changes(api: Harness) -> None:
+    cid = _pending(api)
+    preview = api.get(f"/configs/{cid}/dry-run/preview").json()
+    assert preview["ops"] > 0
+    a = api.post(f"/configs/{cid}/approve", {"actor": "Akash"}).json()
+    assert a["first_run"]["state"] == "queued"
+    assert api.fleet.batch_writes(SID_NEW) == 0  # approving itself writes nothing
+
+    assert api.fleet.work() == 1  # exactly one job: the approval's run
+    assert api.fleet.batch_writes(SID_NEW) == 1
+    first = api.get(f"/configs/{cid}").json()["first_run"]
+    assert first["state"] == "done" and first["status"] == "OK" and first["trigger"] == "approval"
+    assert first["rows_affected"] > 0
+    [run] = [r for r in api.get(f"/sheets/{a['sheet_id']}/runs").json()["items"] if r["run_id"] == first["run_id"]]
+    assert run["config_version"] == a["version"] and run["undo"]["available"] is True  # undoable like any run
+
+    # the watcher sees our own write and does not re-run it
+    stats = api.fleet.tick(30)
+    api.fleet.tick(30)
+    assert api.fleet.batch_writes(SID_NEW) == 1, stats
+
+
+def test_activation_without_a_shown_preview_claims_no_run(api: Harness) -> None:
+    """register_sheet (the harness's hand-written configs) activates without the page's preview."""
+    with api.fleet.factory() as s:
+        cfg_id = s.scalar(select(Config.id).where(Config.sheet_id == api.pk(SID_A), Config.status == "ACTIVE"))
+    assert api.get(f"/configs/{cfg_id}").json()["first_run"] is None
+
+
+def test_approval_stands_when_the_run_queue_is_down(api: Harness, monkeypatch: pytest.MonkeyPatch,
+                                                    caplog: pytest.LogCaptureFixture) -> None:
+    cid = _pending(api)
+
+    def down(sheet_id: int, trigger: str = "change") -> str:
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr(api.fleet.ctx.queue, "enqueue_run", down)
+    with caplog.at_level(logging.WARNING):
+        a = api.post(f"/configs/{cid}/approve", {"actor": "Akash"})
+    assert a.status_code == 200 and a.json()["status"] == "ACTIVE" and a.json()["first_run"] is None
+    assert "approve.first_run_not_queued" in caplog.text
+
+
 def test_reject_needs_a_reason_and_it_shows_in_history(api: Harness) -> None:
     cid = _pending(api)
     assert api.post(f"/configs/{cid}/reject", {"actor": "Akash", "reason": ""}).status_code == 422

@@ -5,7 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { ConfigDetail, Preview, Readback as ReadbackData } from "../../api/types";
+import type { ConfigDetail, FirstRun, Preview, Readback as ReadbackData } from "../../api/types";
 import { Readback } from "../../components/Readback";
 import { DecisionBar } from "./DecisionBar";
 import { PreviewPanel } from "./PreviewPanel";
@@ -20,6 +20,25 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+// Approval queues exactly one run that applies the previewed changes (DECISIONS "Approval queues
+// the first run"); this line follows it from the config's first_run.
+export function firstRunText(run: FirstRun | null): string {
+  if (!run) return "The changes apply on the sheet's next edit.";
+  if (run.state === "queued") return "Applying the changes now…";
+  switch (run.status) {
+    case "OK":
+      return `Changes applied (${run.rows_affected} row${run.rows_affected === 1 ? "" : "s"} updated). The run can be undone from the sheet's history.`;
+    case "NOOP":
+      return "Applied: the sheet already matched, so nothing needed changing.";
+    case "PAUSED_DRIFT":
+      return "Not applied: the sheet's headers changed since the preview, so automation is paused for this sheet.";
+    case "STALE":
+      return "Not applied yet: someone edited the sheet while it was being planned. It retries automatically once they stop editing.";
+    default:
+      return `The first run ended with status ${run.status}; nothing was half-applied. See the sheet's history.`;
+  }
+}
+
 export function ApprovalDetail({ configId }: { configId: number }) {
   const [title, setTitle] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
@@ -28,7 +47,7 @@ export function ApprovalDetail({ configId }: { configId: number }) {
   const config = useQuery({
     queryKey: ["config", configId],
     queryFn: () => api<ConfigDetail>(`/configs/${configId}`),
-    refetchInterval: 5000,
+    refetchInterval: (q) => (q.state.data?.first_run?.state === "queued" ? 1500 : 5000),
   });
   const readback = useQuery({
     queryKey: ["describe", configId, debouncedTitle],
@@ -67,7 +86,7 @@ export function ApprovalDetail({ configId }: { configId: number }) {
         <p className={styles.decided} role="status">
           {c.status === "REJECTED"
             ? `Rejected by ${c.rejected_by}: ${c.decision_reason}`
-            : `Approved by ${c.approved_by}${c.summary_title ? ` with title “${c.summary_title}”` : ""}.`}
+            : `Approved by ${c.approved_by}${c.summary_title ? ` with title “${c.summary_title}”` : ""}. ${firstRunText(c.first_run)}`}
         </p>
       )}
 

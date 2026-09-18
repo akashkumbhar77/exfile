@@ -42,9 +42,10 @@ class JobOutcome:
     ops: int = 0
 
 
-def run_sheet_job(sheet_id: int) -> str:
-    """RQ entry point."""
-    return execute_sheet(get_context(), sheet_id).status
+def run_sheet_job(sheet_id: int, trigger: str = "change") -> str:
+    """RQ entry point. `trigger` is "change" (watcher, after the debounce) or "approval" (the first
+    run an owner approval queues; see DECISIONS "Approval queues the first run")."""
+    return execute_sheet(get_context(), sheet_id, trigger=trigger).status
 
 
 def execute_sheet(ctx: WorkerContext, sheet_id: int, trigger: str = "change", force: bool = False) -> JobOutcome:
@@ -103,7 +104,7 @@ def _execute(ctx: WorkerContext, sheet_id: int, trigger: str, force: bool) -> Jo
                 sheet = s.get(Sheet, sheet_id)
                 assert sheet is not None
                 sheet.status = PAUSED_DRIFT
-                record_runs(s, sheet, p.result.records)
+                record_runs(s, sheet, p.result.records, trigger)
                 record_event(s, sheet, "sheet.paused_drift", {
                     "run_id": run_id,
                     "drift": [{"tab": d.tab, "expected": d.expected, "actual": d.actual} for d in p.report.drift],
@@ -114,7 +115,7 @@ def _execute(ctx: WorkerContext, sheet_id: int, trigger: str, force: bool) -> Jo
             with ctx.factory() as s, s.begin():
                 sheet = s.get(Sheet, sheet_id)
                 assert sheet is not None
-                record_runs(s, sheet, p.result.records)
+                record_runs(s, sheet, p.result.records, trigger)
             return finish(p.status)
 
         if not p.ops:
@@ -131,7 +132,7 @@ def _execute(ctx: WorkerContext, sheet_id: int, trigger: str, force: bool) -> Jo
             assert sheet is not None
             sheet.self_write_watermark = watermark
             sheet.last_fingerprint = post_fp
-            record_runs(s, sheet, p.result.records)
+            record_runs(s, sheet, p.result.records, trigger)
             record_event(s, sheet, "run.committed", {
                 "run_id": run_id, "requests": result.requests, "cells": result.cells_written,
                 "formats": result.formats_written, "tabs": sorted(p.summary), "post_fingerprint": post_fp,

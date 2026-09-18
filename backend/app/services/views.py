@@ -48,6 +48,36 @@ def config_json(c: Config, include_body: bool = False) -> dict[str, Any]:
     return out
 
 
+def first_run(s: Session, c: Config) -> dict[str, Any] | None:
+    """The run an approval queued (DECISIONS "Approval queues the first run"), from the DB.
+
+    None unless a `run.queued` event with trigger "approval" exists for this config version, so
+    configs activated without a shown preview never claim a run. Otherwise `state` is "queued"
+    until the first run under this version is recorded (whatever its trigger: a BUSY auto-run
+    re-arms the debouncer and lands as a "change" run), then "done" with that run's outcome."""
+    queued = s.scalar(
+        select(Event).where(Event.sheet_id == c.sheet_id, Event.kind == "run.queued",
+                            Event.payload["config_version"].as_integer() == c.version)
+        .order_by(Event.id).limit(1)
+    )
+    if queued is None:
+        return None
+    rows = list(s.scalars(
+        select(Run).where(Run.sheet_id == c.sheet_id, Run.config_version == c.version,
+                          Run.id == select(func.min(Run.id)).where(Run.sheet_id == c.sheet_id,
+                                                                   Run.config_version == c.version)
+                          .scalar_subquery())
+    ))
+    if not rows:
+        return {"state": "queued", "queued_at": iso(queued.received_at)}
+    run_id = rows[0].run_id
+    group = list(s.scalars(select(Run).where(Run.sheet_id == c.sheet_id, Run.run_id == run_id)))
+    status = max((r.status for r in group), key=lambda st: STATUS_RANK.get(st, 0))
+    return {"state": "done", "queued_at": iso(queued.received_at), "run_id": run_id, "status": status,
+            "trigger": group[0].trigger_type,
+            "rows_affected": sum(r.rows_affected for r in group) if status == "OK" else 0}
+
+
 # ---- runs + undo availability ------------------------------------------------------------
 
 

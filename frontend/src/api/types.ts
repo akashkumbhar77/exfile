@@ -60,7 +60,20 @@ export interface ConfigDetail extends ConfigSummary {
     rules: Array<{ action: string; presentation?: { title?: string | null } }>;
   } & Record<string, unknown>;
   sheet: SheetRef;
+  /** The run an approval queued; null when none was queued (e.g. activated without a preview). */
+  first_run: FirstRun | null;
 }
+
+export type FirstRun =
+  | { state: "queued"; queued_at: string | null }
+  | {
+      state: "done";
+      queued_at: string | null;
+      run_id: string;
+      status: string;
+      trigger: string;
+      rows_affected: number;
+    };
 
 export interface PreviewCell {
   v: string | number | boolean | null;
