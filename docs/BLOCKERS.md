@@ -96,3 +96,28 @@ built and tested with a scripted LLM.
 - **B1 exit: passed on evidence.**
 - Live finding fixed during the check: see DECISIONS "google_http" (per-thread Google clients,
   503 google_unavailable, Retry on the preview).
+
+## S5 / PATCH-003 B2 Enroll: exit status (2026-09-18)
+
+- [x] **A fresh workbook reached PENDING_APPROVAL from its URL and an English instruction in
+  the Enroll page.** The owner enrolled sheet 3 entirely through the page, reviewed the
+  generated proposal, and approved version 1. No CLI enrollment was used.
+- [x] **A nonsense instruction has a readable failure path.** Four live enrollment attempts
+  completed as `failed`, with no config proposed; the job endpoint exposes the designated
+  failure text from its DB-only enrollment record. The Enroll-page test renders that response
+  as the readable failure view and the backend contract test covers the same endpoint path.
+- [x] **The first watcher run applied the approved proposal only to sheet 3.**
+  `run_20260918T140007_a7fe8f51` planned six operations and committed them. Sheet 2 had no
+  concurrent run.
+- [x] **A later human edit/revert produced an observed no-op.**
+  `run_20260918T150407_7a8a978e` is `NOOP`, trigger `change`, zero rows affected, config v1.
+  This was a user-originated edit, so it proves the watcher path rather than the self-write
+  suppression path.
+- **B2 exit: passed on evidence.**
+
+## Next capability: universal numeric conditions (2026-09-18)
+
+The requested numeric-condition capability is now eligible to start once this B2 branch is
+merged. The prepared design is a file-independent, typed numeric condition/expression language;
+it is not a per-workbook helper-column workaround. Implement the schema, validator,
+deterministic evaluator, onboarding skill, readback, and tests together on a focused branch.
