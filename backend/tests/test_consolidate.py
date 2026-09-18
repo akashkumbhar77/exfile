@@ -89,3 +89,36 @@ def test_ungoverned_tab_excluded_with_warning(workbook: Workbook, ctx: EvalConte
     s = r.workbook.tab("SUMMARY")
     assert s is not None and len(s.values) == 2 + 10
     assert any("SPARES" in w and "not governed" in w for p in r.plan.plans for w in p.warnings)
+
+
+def test_existing_title_is_kept_when_config_sets_none() -> None:
+    """Addendum to PATCH-003 decision (c): with no configured title, the rebuilt target keeps the
+    title banner (text + anchor style) it already has; a brand-new target gets none; an
+    owner-supplied title still wins. Rebuilding twice is a no-op."""
+    from app.adapters.base import Grid
+    from app.services.grid import CellFormat
+    from app.services.ops import diff_workbooks
+    from tests.conftest import load_reference_raw
+    from tests.fixtures import reference_workbook
+
+    raw = load_reference_raw()
+    raw["rules"][2]["presentation"].pop("title", None)
+    no_title = ConfigSpec.model_validate(raw)
+    ctx = EvalContext("t", reference_workbook.TODAY)
+
+    fresh = execute_run(no_title, reference_workbook.build(), RunEvent.manual(), ctx).workbook
+    assert fresh.tab("SUMMARY").values[0][0] in (None, "")  # type: ignore[union-attr]
+
+    wb = reference_workbook.build()
+    banner = CellFormat(font="#FFFFFF", background="#38761D")
+    wb.tabs.insert(0, Tab("SUMMARY", [["LEGACY BANNER TEXT"], ["OLD HEADER"]], formats=[[banner]]))
+    out = execute_run(no_title, wb, RunEvent.manual(), ctx).workbook
+    summary = out.tab("SUMMARY")
+    assert summary is not None
+    assert summary.values[0][0] == "LEGACY BANNER TEXT" and summary.formats[0][0] == banner
+    again = execute_run(no_title, out, RunEvent.manual(), ctx).workbook
+    assert diff_workbooks(Grid(out), again) == []  # stable: the fallback doesn't churn
+
+    raw["rules"][2]["presentation"]["title"] = "OWNER TITLE"
+    owner = execute_run(ConfigSpec.model_validate(raw), wb, RunEvent.manual(), ctx).workbook
+    assert owner.tab("SUMMARY").values[0][0] == "OWNER TITLE"  # type: ignore[union-attr]

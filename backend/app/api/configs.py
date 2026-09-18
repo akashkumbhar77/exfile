@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import Auth, Ctx
+from app.api.deps import Auth, Ctx, registered_config
 from app.api.errors import ApiError
 from app.models import Config, Sheet
 from app.schemas.config import ConfigSpec
@@ -30,13 +30,7 @@ class RejectBody(BaseModel):
 
 
 def _load(ctx: Ctx, config_id: int) -> tuple[Config, Sheet]:
-    with ctx.factory() as s:
-        row = s.get(Config, config_id)
-        if row is None:
-            raise ApiError(404, f"config {config_id} not found")
-        sheet = s.get(Sheet, row.sheet_id)
-        assert sheet is not None
-        return row, sheet
+    return registered_config(ctx, config_id)
 
 
 def _sheet_ref(sheet: Sheet) -> dict[str, Any]:
@@ -85,6 +79,7 @@ def dry_run_preview(ctx: Ctx, config_id: int, summary_title: str | None = None,
 
 @router.post("/{config_id}/approve")
 def approve(ctx: Ctx, config_id: int, body: ApproveBody) -> dict[str, Any]:
+    _load(ctx, config_id)
     try:
         with ctx.factory() as s, s.begin():
             approve_config(s, config_id, body.actor.strip(), summary_title=body.summary_title)
@@ -95,6 +90,7 @@ def approve(ctx: Ctx, config_id: int, body: ApproveBody) -> dict[str, Any]:
 
 @router.post("/{config_id}/reject")
 def reject(ctx: Ctx, config_id: int, body: RejectBody) -> dict[str, Any]:
+    _load(ctx, config_id)
     try:
         with ctx.factory() as s, s.begin():
             reject_config(s, config_id, body.actor.strip(), body.reason)

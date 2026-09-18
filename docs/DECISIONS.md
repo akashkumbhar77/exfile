@@ -625,3 +625,40 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   - `camelCaseOnly` class names
 - **Not used:** Tailwind (it adds a build pipeline and utility classes throughout the markup),
   and component libraries beyond headless primitives (per PATCH-003).
+
+### Addendum to decision (c), the engine title fallback (owner request, 2026-09-18)
+- **When a consolidate rule sets no `presentation.title`** and the target tab already exists
+  with text in A1 (the anchor of a merged banner), the rebuilt tab keeps that title text and
+  A1's style exactly as they are.
+  - A brand-new target gets no banner.
+  - An owner-supplied title (decision (c), at approval) always wins.
+- **Only the engine reads the existing banner, while rebuilding.** Nothing is sent to the
+  model, so B.7 is unaffected.
+- **The readback says so:** "Keeps the tab's current title banner, if it has one."
+- **Test:** `test_existing_title_is_kept_when_config_sets_none` (keep, none-when-new, owner
+  wins, and rebuilding twice is a no-op).
+- **Live check:** config v20 on sheet 2, without an owner title, now makes 0 changes (before
+  this it rewrote the banner).
+
+### Pre-merge hardening of s5-api (2026-09-18)
+- **The route-table auth test is built from the app's OpenAPI document.** FastAPI 0.141 nests
+  included routers, so `app.routes` no longer lists them. Every `/api/v1` path and method
+  except `/health` must answer 401 `unauthorized` to no header, a wrong token, and a bare
+  token without `Bearer`. It covers 20 routes today, and new ones are picked up automatically.
+- **B.9 at the API layer:** a single guard per id type (`registered_sheet`,
+  `registered_config`) returns 404 unless the id is in this org's registry.
+  - **This closed a real gap:** approve and reject used to pass the raw `config_id` to the
+    registry with no org check.
+  - A table-driven test covers all 13 `{sheet_id}`/`{config_id}` routes for both a missing id
+    and another org's sheet and config: each must be 404 and make no Google call, and the
+    other org's config must stay PENDING.
+  - A mutation check confirmed the test fails if the approve guard is removed.
+- **The stray `C:\AKASHK~1\` folder** was created by a mistaken tool call, not by project
+  code.
+  - The session's own `Write` call passed a truncated scratchpad path
+    (`C:\AKASHK~1\placeholder.txt`, with `Users\` missing).
+  - No code, test, script or config in the repo builds that path (checked with a grep of the
+    tracked files).
+  - The full test suite, CLI commands, the API, the worker and the watcher all ran without
+    recreating it.
+  - Nothing in the codebase needed a fix; the folder was removed at the time.

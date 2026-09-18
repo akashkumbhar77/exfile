@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import Auth, Ctx, job_queue
+from app.api.deps import Auth, Ctx, job_queue, registered_sheet
 from app.api.errors import ApiError
 from app.models import Config, Sheet
 from app.schemas.config import ConfigSpec
@@ -56,11 +56,7 @@ class UndoBody(BaseModel):
 
 
 def _sheet(ctx: Ctx, sheet_id: int) -> Sheet:
-    with ctx.factory() as s:
-        sheet = s.get(Sheet, sheet_id)
-        if sheet is None or sheet.org_id != ctx.org_id:
-            raise ApiError(404, f"sheet {sheet_id} not found")
-        return sheet
+    return registered_sheet(ctx, sheet_id)
 
 
 def _ref(text: str) -> str:

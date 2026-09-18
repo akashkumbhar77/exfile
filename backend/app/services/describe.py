@@ -223,6 +223,8 @@ def rule_text(r: Rule, config: ConfigSpec) -> RuleText:
                 details.append(f"Colored the same way as rule {quote(r.format_like)}.")
             if r.presentation.title:
                 details.append(f"Title banner: {quote(r.presentation.title)}.")
+            else:
+                details.append("Keeps the tab's current title banner, if it has one.")
             details.append("Locked against manual edits (it is rebuilt automatically)." if r.lock
                            else "Not locked.")
             return RuleText(r.id, r.action, f"Rebuild the {r.target_tab} tab from {tabs_text(r.sources)}",

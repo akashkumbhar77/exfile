@@ -9,6 +9,7 @@ from fastapi import Depends, Header
 
 from app.api.errors import ApiError
 from app.core.settings import get_settings
+from app.models import Config, Sheet
 from app.workers.context import WorkerContext, get_context
 
 _context: WorkerContext | None = None
@@ -47,3 +48,23 @@ def require_token(authorization: Annotated[str | None, Header()] = None) -> None
 
 Ctx = Annotated[WorkerContext, Depends(context)]
 Auth = Depends(require_token)
+
+
+def registered_sheet(ctx: WorkerContext, sheet_id: int) -> Sheet:
+    """B.9 at the API layer: the id must be a row in the `sheets` registry of this org. Anything
+    else is 404 before any Google call is made (the adapter's registry guard is the second layer)."""
+    with ctx.factory() as s:
+        sheet = s.get(Sheet, sheet_id)
+        if sheet is None or sheet.org_id != ctx.org_id:
+            raise ApiError(404, f"sheet {sheet_id} not found")
+        return sheet
+
+
+def registered_config(ctx: WorkerContext, config_id: int) -> tuple[Config, Sheet]:
+    """A config is reachable only through its registered sheet in this org (same 404 otherwise)."""
+    with ctx.factory() as s:
+        row = s.get(Config, config_id)
+        sheet = s.get(Sheet, row.sheet_id) if row is not None else None
+        if row is None or sheet is None or row.org_id != ctx.org_id or sheet.org_id != ctx.org_id:
+            raise ApiError(404, f"config {config_id} not found")
+        return row, sheet

@@ -71,6 +71,7 @@ def evaluate_consolidate(
     headers, rows = assemble(rule, workbook, config, plan.warnings)
 
     after = Tab(rule.target_tab, [])
+    existing = workbook.tab(rule.target_tab)
     if config.header_row > 1 and rule.presentation.title:
         after.ensure_size(1, 1)
         after.values[0][0] = rule.presentation.title
@@ -78,6 +79,12 @@ def evaluate_consolidate(
         after.formats[0][0] = CellFormat(
             font=rule.presentation.title_font.upper(), background=rule.presentation.title_background.upper()
         )
+    elif config.header_row > 1 and existing is not None and not is_empty(existing.row(1)[0] if existing.width else None):
+        # Title fallback (addendum to PATCH-003 decision (c)): no configured title -> keep the target
+        # tab's existing banner text and anchor style exactly as they are. Read by the engine only.
+        after.ensure_size(1, 1)
+        after.values[0][0] = existing.values[0][0]
+        after.formats[0][0] = existing.formats[0][0]
     after.ensure_size(config.header_row, len(headers))
     after.values[config.header_row - 1][: len(headers)] = headers
     header_fmt = CellFormat(
