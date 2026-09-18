@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 
 from app.schemas.config import ConfigSpec
-from app.services.describe import colour, condition_text, describe_config, rule_text
+from app.services.describe import Scope, colour, describe_config, rule_text
+from tests.fixtures import reference_workbook
 from tests.conftest import load_reference_raw
 
 GOLDEN = Path(__file__).parent / "fixtures" / "reference_readback.txt"
@@ -57,7 +58,7 @@ def _cfg(rules: list[dict[str, Any]], **extra: Any) -> ConfigSpec:
 ])
 def test_every_action_has_a_template(rule: dict[str, Any], expected: str) -> None:
     cfg = _cfg([rule])
-    assert rule_text(cfg.rules[0], cfg).headline == expected
+    assert rule_text(cfg.rules[0], 1, Scope(cfg)).headline == expected
 
 
 def test_triggers_and_details() -> None:
@@ -67,15 +68,50 @@ def test_triggers_and_details() -> None:
         {"id": "cp", "action": "copy", "tabs": ["MACHINES"], "trigger": {"schedule": {"cron": "0 7 * * 1"}},
          "when": {"column": "STATUS", "contains": "hold"}, "to_tab": "SPARES", "key_columns": ["STATUS"]},
     ])
-    a, b = (rule_text(r, cfg) for r in cfg.rules)
+    a, b = (rule_text(r, i, Scope(cfg)) for i, r in enumerate(cfg.rules, 1))
     assert a.when == "45 seconds after edits stop" and "DISPATCH DATE is after 2026-01-31" in a.headline
     assert b.when == "on the schedule “0 7 * * 1” (cron)" and "STATUS contains “hold”" in b.headline
-    assert b.details == ["A row is copied only once, identified by STATUS."]
+    assert [x.text for x in b.details] == ["A row is copied only once, identified by STATUS."]
 
 
-def test_colours_are_named_with_hex() -> None:
-    assert colour("#ff0000") == "red (#FF0000)"
-    assert colour("#123456").endswith("(#123456)") and "-ish" in colour("#123456")
+def test_colours_are_segments_and_never_bare_hex_in_text() -> None:
+    assert colour("#ff0000") == {"kind": "color", "name": "red", "hex": "#FF0000"}
+    assert colour("#123456")["name"].endswith("-ish")
+    text = "\n".join(describe_config(ConfigSpec.model_validate(load_reference_raw())).lines())
+    assert "#" not in text  # hex only lives in structured segments (tooltip), never in prose
+    fmt = describe_config(ConfigSpec.model_validate(load_reference_raw())).rules[1]
+    swatches = [s for x in fmt.details for s in x.segments if s["kind"] == "color"]
+    assert {"kind": "color", "name": "pink", "hex": "#FCE4EC"} in swatches
+
+
+def test_page_ordering_and_wording() -> None:
+    t = describe_config(ConfigSpec.model_validate(load_reference_raw()), reference_workbook.build())
+    fmt = t.rules[1]
+    assert fmt.details[0].text.startswith("Each row starts as black text, no fill; the rules below")
+    overdue = [x.text for x in fmt.details if "(overdue)" in x.text]
+    assert overdue == ["Where STATUS is IN-PROCESS and DISPATCH DATE is before today (overdue): "
+                       "black text on pink."]
+    assert "(in the order shown under Stages)" in t.rules[0].headline and "→" not in t.rules[0].headline
+    assert t.rules[1].when == "right after rule 1 runs"
+    cons = [x.text for x in t.rules[2].details]
+    assert "Sorted the same way as rule 1." in cons and "Colored the same way as rule 2." in cons
+    assert "IN-PROCESS (labels containing “PROCESS”)" in t.stages[0]
+
+
+def test_tabs_resolve_live_with_currently_phrasing_in_sheet_order() -> None:
+    from app.services.grid import Tab
+
+    cfg = ConfigSpec.model_validate(load_reference_raw())
+    wb = reference_workbook.build()
+    t = describe_config(cfg, wb)
+    assert t.summary == "Organizes 2 tabs with 3 rules — currently: MACHINES and SPARES."
+    assert "every tab with a STATUS column (currently: MACHINES and SPARES)" in t.rules[0].headline
+    wb.tabs = [x for x in wb.tabs if x.name != "SPARES"] + [Tab("NOTES", [["x"]])]
+    gone = describe_config(cfg, wb)
+    assert gone.summary == "Organizes 2 tabs with 3 rules — currently: MACHINES; not in the sheet now: SPARES."
+    assert gone.tabs_missing == ["SPARES"]
+    static = describe_config(cfg)
+    assert static.summary == "Organizes 2 tabs with 3 rules (MACHINES and SPARES)." and "currently" not in static.summary
 
 
 def test_owner_title_appears_in_readback() -> None:
@@ -91,4 +127,5 @@ def test_frontend_readback_fixture_matches_the_describe_endpoint_payload() -> No
     from app.services.views import describe_json
 
     fixture = Path(__file__).resolve().parents[2] / "frontend" / "src" / "fixtures" / "describe.reference.json"
-    assert json.loads(fixture.read_text(encoding="utf-8")) == describe_json(load_reference_raw())
+    live = describe_json(load_reference_raw(), reference_workbook.build())  # as the page receives it
+    assert json.loads(fixture.read_text(encoding="utf-8")) == live

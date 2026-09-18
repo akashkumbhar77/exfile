@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.models import Config, Event, Org, Run, Sheet, SnapshotRow
 from app.schemas.config import ConfigSpec
 from app.services.describe import describe_config
+from app.services.grid import Workbook
 
 STATUS_RANK = {"ERROR": 6, "PAUSED_DRIFT": 5, "BLOCKED": 4, "STALE": 3, "OK": 2, "NOOP": 1}
 
@@ -23,17 +24,11 @@ def iso(dt: datetime | None) -> str | None:
     return dt.astimezone(UTC).isoformat() if dt else None
 
 
-def describe_json(body: dict[str, Any]) -> dict[str, Any]:
-    text = describe_config(ConfigSpec.model_validate(body))
-    return {
-        "summary": text.summary,
-        "governed_tabs": text.governed_tabs,
-        "stages": text.stages,
-        "rules": [{"id": r.id, "action": r.action, "headline": r.headline, "when": r.when, "details": r.details}
-                  for r in text.rules],
-        "guards": text.guards,
-        "lines": text.lines(),
-    }
+def describe_json(body: dict[str, Any], workbook: Workbook | None = None) -> dict[str, Any]:
+    """Readback payload; with the live workbook, tabs resolve as "currently: ..." in sheet order."""
+    out = describe_config(ConfigSpec.model_validate(body), workbook).json()
+    out["live"] = workbook is not None
+    return out
 
 
 def config_json(c: Config, include_body: bool = False) -> dict[str, Any]:

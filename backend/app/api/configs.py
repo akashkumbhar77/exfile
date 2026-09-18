@@ -61,10 +61,19 @@ def get_config(ctx: Ctx, config_id: int) -> dict[str, Any]:
 
 
 @router.get("/{config_id}/describe")
-def describe(ctx: Ctx, config_id: int, summary_title: str | None = None) -> dict[str, Any]:
-    row, _ = _load(ctx, config_id)
+def describe(ctx: Ctx, config_id: int, summary_title: str | None = None, live: bool = True) -> dict[str, Any]:
+    """Plain-English readback. With live=true (default) tab selectors are resolved against the sheet
+    as it is now ("currently: ..."); if the sheet can't be read, the static readback is returned
+    with live=false."""
+    row, sheet = _load(ctx, config_id)
     body = apply_summary_title(row.body, summary_title) if summary_title and summary_title.strip() else row.body
-    return describe_json(body)
+    workbook = None
+    if live:
+        try:
+            workbook = ctx.adapter.read_grid(sheet.google_sheet_id).workbook
+        except Exception:  # unreadable right now: fall back to the static readback, flagged live=false
+            workbook = None
+    return describe_json(body, workbook)
 
 
 @router.get("/{config_id}/dry-run/preview")

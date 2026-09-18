@@ -184,8 +184,12 @@ def _pending(api: Harness) -> int:
 def test_describe_preview_and_approve_with_owner_title(api: Harness, caplog: pytest.LogCaptureFixture) -> None:
     cid = _pending(api)
     d = api.get(f"/configs/{cid}/describe").json()
-    assert d["rules"][0]["headline"].startswith("Keep every tab with a STATUS column sorted by STATUS stage")
-    assert d["lines"][0].startswith("Organizes 2 tabs")
+    assert d["live"] is True
+    assert d["rules"][0]["headline"].startswith(
+        "Keep every tab with a STATUS column (currently: MACHINES and SPARES) sorted by STATUS stage")
+    assert d["summary"] == "Organizes 2 tabs with 3 rules — currently: MACHINES and SPARES."
+    swatch = next(s for r in d["rules"] for x in r["details"] for s in x["segments"] if s["kind"] == "color")
+    assert set(swatch) == {"kind", "name", "hex"}
 
     before = _counts(api)
     with caplog.at_level(logging.DEBUG):

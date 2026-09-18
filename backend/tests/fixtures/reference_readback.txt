@@ -1,22 +1,22 @@
-Organizes 2 tabs (MACHINES and SPARES) with 3 rules.
+Organizes 2 tabs with 3 rules (MACHINES and SPARES).
 
-STATUS stages, in order: IN-PROCESS (contains “PROCESS”), COMPLETED (contains “COMPLET”), DISPUTED (contains “DISPUT”), DISPATCHED (contains “DISPATCH”) and CANCELLED (contains “CANCEL”); any other value sorts last with plain formatting.
+STATUS stages, in order: IN-PROCESS (labels containing “PROCESS”), COMPLETED (labels containing “COMPLET”), DISPUTED (labels containing “DISPUT”), DISPATCHED (labels containing “DISPATCH”) and CANCELLED (labels containing “CANCEL”); any other label sorts last with plain formatting.
 
-1. Keep every tab with a STATUS column sorted by STATUS stage (IN-PROCESS → COMPLETED → DISPUTED → DISPATCHED → CANCELLED; anything else last) then by DISPATCH DATE, oldest first, blanks last (whenever STATUS, DISPATCH DATE or FREEZE? is edited).
-2. Color rows in every tab with a STATUS column (right after rule “sort_by_stage” runs).
-   - Where STATUS is IN-PROCESS: red (#FF0000) text.
-   - Where STATUS is COMPLETED: green (#008000) text.
-   - Where STATUS is DISPUTED: gold (#D4A017) text.
-   - Where STATUS is CANCELLED: black (#000000) text, struck through.
-   - Where STATUS is IN-PROCESS and DISPATCH DATE is before today: black (#000000) text on pink (#FCE4EC).
-   - In the FREEZE? column, cells that are “YES”: green (#008000) text.
-   - Each row starts as black (#000000) text, no fill; the rules above are applied in order, and a later match wins.
+1. Keep every tab with a STATUS column sorted by STATUS stage (in the order shown under Stages) then by DISPATCH DATE, oldest first, blanks last (whenever STATUS, DISPATCH DATE or FREEZE? is edited).
+2. Color rows in every tab with a STATUS column (right after rule 1 runs).
+   - Each row starts as black text, no fill; the rules below are applied in order, and a later match wins.
+   - Where STATUS is IN-PROCESS: red text.
+   - Where STATUS is COMPLETED: green text.
+   - Where STATUS is DISPUTED: gold text.
+   - Where STATUS is CANCELLED: black text, struck through.
+   - Where STATUS is IN-PROCESS and DISPATCH DATE is before today (overdue): black text on pink.
+   - In the FREEZE? column, cells that are “YES”: green text.
 3. Rebuild the SUMMARY tab from every tab with a STATUS column (2 minutes after edits stop).
    - Columns are lined up by name across tabs.
    - A “SOURCE SHEET” column comes first, holding the source tab's name.
    - Empty “Type of Work” cells are filled with the source tab's name.
-   - Sorted the same way as rule “sort_by_stage”.
-   - Colored the same way as rule “status_formatting”.
+   - Sorted the same way as rule 1.
+   - Colored the same way as rule 2.
    - Title banner: “CONSOLIDATED ORDER SUMMARY — ALL SHEETS”.
    - Locked against manual edits (it is rebuilt automatically).
 
