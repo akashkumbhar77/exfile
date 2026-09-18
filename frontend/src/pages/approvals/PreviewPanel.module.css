@@ -58,3 +58,14 @@
   font-weight: 600;
   padding: var(--space-2) 0;
 }
+
+.retry {
+  font: inherit;
+  font-size: var(--text-sm);
+  margin-left: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+}

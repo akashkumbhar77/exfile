@@ -6,7 +6,15 @@ import styles from "./PreviewPanel.module.css";
 
 export function PreviewPanel({ query }: { query: UseQueryResult<Preview> }) {
   if (query.isLoading) return <p className={styles.muted}>Running the dry run on the live sheet…</p>;
-  if (query.error || !query.data) return <p className={styles.error}>{(query.error as Error)?.message ?? "No preview"}</p>;
+  if (query.error || !query.data)
+    return (
+      <p className={styles.error} role="alert">
+        {(query.error as Error)?.message ?? "No preview"}{" "}
+        <button type="button" className={styles.retry} disabled={query.isFetching} onClick={() => void query.refetch()}>
+          {query.isFetching ? "Retrying…" : "Retry"}
+        </button>
+      </p>
+    );
   const p = query.data;
   const changing = p.tabs.filter((t) => t.changed_rows_total > 0);
 

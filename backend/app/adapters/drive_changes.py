@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 
 from app.adapters.base import SourceRegistry, UnregisteredSource
+from app.adapters.google_http import ThreadHttp, execute
 
 DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.metadata.readonly",)
 _CHANGE_FIELDS = (
@@ -39,9 +40,10 @@ def parse_rfc3339(s: str) -> datetime:
 
 
 class DriveChangesFeed:
-    def __init__(self, service: Any, registry: SourceRegistry) -> None:
+    def __init__(self, service: Any, registry: SourceRegistry, thread_http: ThreadHttp | None = None) -> None:
         self._svc = service
         self._registry = registry
+        self._http = thread_http
 
     @classmethod
     def from_service_account(cls, key_path: str, registry: SourceRegistry) -> DriveChangesFeed:
@@ -49,10 +51,10 @@ class DriveChangesFeed:
         from googleapiclient.discovery import build
 
         creds = service_account.Credentials.from_service_account_file(key_path, scopes=list(DRIVE_SCOPES))  # type: ignore[no-untyped-call]
-        return cls(build("drive", "v3", credentials=creds, cache_discovery=False), registry)
+        return cls(build("drive", "v3", credentials=creds, cache_discovery=False), registry, ThreadHttp(creds))
 
     def start_page_token(self) -> str:
-        resp = self._svc.changes().getStartPageToken(supportsAllDrives=True).execute()
+        resp = execute(self._svc.changes().getStartPageToken(supportsAllDrives=True), self._http)
         return str(resp["startPageToken"])
 
     def list_changes(self, page_token: str) -> tuple[list[FileChange], str]:
@@ -60,10 +62,10 @@ class DriveChangesFeed:
         changes: list[FileChange] = []
         token = page_token
         while True:
-            resp = self._svc.changes().list(
+            resp = execute(self._svc.changes().list(
                 pageToken=token, fields=_CHANGE_FIELDS, pageSize=1000, spaces="drive",
                 includeItemsFromAllDrives=True, supportsAllDrives=True, includeRemoved=True,
-            ).execute()
+            ), self._http)
             changes.extend(_parse(resp.get("changes", [])))
             if "newStartPageToken" in resp:
                 return changes, str(resp["newStartPageToken"])
@@ -72,7 +74,8 @@ class DriveChangesFeed:
     def modified_time(self, file_id: str) -> datetime:
         if not self._registry.is_registered(file_id):
             raise UnregisteredSource(f"file {file_id!r} is not in the registry; refusing to open it")
-        resp = self._svc.files().get(fileId=file_id, fields="modifiedTime", supportsAllDrives=True).execute()
+        resp = execute(self._svc.files().get(fileId=file_id, fields="modifiedTime", supportsAllDrives=True),
+                       self._http)
         return parse_rfc3339(resp["modifiedTime"])
 
 

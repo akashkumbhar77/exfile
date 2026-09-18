@@ -307,3 +307,17 @@ def test_fleet_summary_and_sheet_list(api: Harness) -> None:
     items = {i["google_sheet_id"]: i for i in api.get("/sheets").json()["items"]}
     assert items[SID_A]["last_run"]["status"] == "OK" and items[SID_B]["status"] == "PAUSED"
     assert items[SID_A]["title"] == SID_A or items[SID_A]["title"]
+
+
+def test_a_google_timeout_is_a_retryable_503_not_internal_error(api: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    cid = _pending(api)
+
+    def slow(_ref: str) -> Any:
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(api.fleet.ctx.adapter, "read_grid", slow)
+    r = api.get(f"/configs/{cid}/dry-run/preview")
+    assert r.status_code == 503
+    assert r.json()["error"]["code"] == "google_unavailable" and "try again" in r.json()["error"]["message"]
+    d = api.get(f"/configs/{cid}/describe").json()  # describe degrades to the static readback instead
+    assert d["live"] is False and d["rules"]
