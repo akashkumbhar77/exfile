@@ -83,3 +83,12 @@ def test_owner_title_appears_in_readback() -> None:
     raw["rules"][2]["presentation"]["title"] = "Q3 ORDERS"
     text = "\n".join(describe_config(ConfigSpec.model_validate(raw)).lines())
     assert "Title banner: “Q3 ORDERS”." in text
+
+
+def test_frontend_readback_fixture_matches_the_describe_endpoint_payload() -> None:
+    """The Approvals page's fixture is exactly what GET /configs/{id}/describe returns for the
+    reference config, so UI work and tests can't drift from the API's readback."""
+    from app.services.views import describe_json
+
+    fixture = Path(__file__).resolve().parents[2] / "frontend" / "src" / "fixtures" / "describe.reference.json"
+    assert json.loads(fixture.read_text(encoding="utf-8")) == describe_json(load_reference_raw())
