@@ -75,8 +75,24 @@ built and tested with a scripted LLM.
   approved config v20 (id 21) in the dashboard at 13:10:11 (`POST /configs/21/approve` returned
   200). v20 is ACTIVE with approved_by "Akash"; v1 is SUPERSEDED; the sheet stays ACTIVE on
   config 21; the `config.approved` event is recorded; nothing was written to the sheet.
-- [ ] **Rejecting leaves a reason visible in config history, live.** It's covered by the API
-  and component tests, but not yet done live because no pending config remains. To do: reject a
-  throwaway proposal from the page.
+- [x] **Rejecting leaves a reason visible in config history, live.** A throwaway proposal (an
+  unchanged copy of the active rules, source "throwaway B1 reject check") was rejected from the
+  page at 13:21:51 UTC: config id 23 (v22) is REJECTED, with rejected_by "Akash" and the owner's
+  reason in `decision_reason`, as returned by `GET /sheets/2/configs`. The `config.rejected` event
+  (91) is recorded, and the sheet stayed ACTIVE on its approved config.
+  - Incident during the check: the owner clicked Approve instead of Reject on the first
+    throwaway (config id 22, v21). Its body was identical to v20 apart from `config_version`, so
+    the rules the sheet runs did not change. v21 is now ACTIVE and v20 SUPERSEDED; the history
+    keeps this (approvals are not reversed). A second throwaway (v22) was rejected as intended.
+    Approve and Reject sit side by side on the decision bar; whether Approve needs a
+    confirmation step is an open question for B2.
+- [x] **Approve -> ACTIVE -> observed no-op, live.** The owner edited a governed cell on sheet 2 and
+  reverted it. The watcher saw the change at 18:54:24 IST and dispatched it after the debounce at
+  18:54:54. The worker ran `run_20260918T132454_dd160cd4` under config v21: status NOOP, ops=0,
+  2.1 s, nothing written.
+  - The watcher and worker had been running pre-google_http code; the watcher logged 4
+    connection errors at 17:00 and then went silent. Both were restarted on current code before
+    this check.
+- **B1 exit: passed on evidence.**
 - Live finding fixed during the check: see DECISIONS "google_http" (per-thread Google clients,
   503 google_unavailable, Retry on the preview).
