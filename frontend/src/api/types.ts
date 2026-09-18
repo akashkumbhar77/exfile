@@ -106,3 +106,34 @@ export interface Preview {
 export interface ErrorEnvelope {
   error: { code: string; message: string; request_id: string; details?: unknown[] };
 }
+
+export interface Meta {
+  service_account_email: string | null;
+  share_instructions: string[];
+  debounce_seconds: number;
+  poll_interval_seconds: number;
+}
+
+export type AccessCheck =
+  | { access: "ok"; ok: true; sheet_id: string; id: number; title: string; tabs: string[]; timezone: string }
+  | { access: "forbidden" | "not_found"; ok: false; sheet_id: string; id: number; message: string };
+
+export interface EnrollAccepted {
+  job_id: string;
+  sheet_id: number;
+  google_sheet_id: string;
+  state: JobState;
+}
+
+export type JobState = "queued" | "profiling" | "compiling" | "validating" | "dry_running" | "proposed" | "failed";
+
+export interface Job {
+  job_id: string;
+  state: JobState;
+  sheet_id: number | null;
+  config_id: number | null;
+  config_version: number | null;
+  failure: string | null;
+  failures: string[];
+  done: boolean;
+}
