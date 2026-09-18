@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "engine-clipboard",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run", "--directory", "backend", "python", "-m", "http.server", "8765",
+        "--bind", "127.0.0.1",
+        "--directory", "C:/Users/Akash Kumbhar/AppData/Local/Temp/claude/C--Users-Akash-Kumbhar-Documents-EX-FILE/d0b5d010-7b87-4b9e-8584-a1d1ade15f6e/scratchpad"
+      ],
+      "port": 8765
+    }
+  ]
+}

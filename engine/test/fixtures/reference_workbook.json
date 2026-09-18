@@ -1,0 +1,245 @@
+{
+ "tabs": [
+  {
+   "name": "LEGENDS",
+   "rows": [
+    [
+     "LEGEND",
+     ""
+    ],
+    [
+     "COLOUR",
+     "MEANING"
+    ],
+    [
+     "Red",
+     "In process"
+    ]
+   ],
+   "number_formats": []
+  },
+  {
+   "name": "MACHINES",
+   "rows": [
+    [
+     "MACHINE ORDERS",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "SR NO",
+     "CUSTOMER NAME",
+     "MACHINE NAME",
+     "QTY",
+     "TENTATIVE DISPATCH DATE",
+     "STATUS",
+     "WORK ORDER FREEZE?",
+     "PANEL IN-HOUSE OR OUTSOURCE?"
+    ],
+    [
+     1,
+     "Acme",
+     "Lathe",
+     2,
+     {
+      "$date": "2026-10-01"
+     },
+     "Completed",
+     "YES",
+     "In-House"
+    ],
+    [
+     2,
+     "Beta",
+     "Mill",
+     1,
+     {
+      "$date": "2026-09-01"
+     },
+     "A. IN PROCESS",
+     "NO",
+     "Outsource"
+    ],
+    [
+     3,
+     "Gamma",
+     "Press",
+     1,
+     "",
+     "In-Process",
+     "",
+     ""
+    ],
+    [
+     4,
+     "Delta",
+     "Drill",
+     3,
+     {
+      "$date": "2026-09-20"
+     },
+     "IN-PROCESS",
+     "YES",
+     ""
+    ],
+    [
+     5,
+     "Eps",
+     "Saw",
+     1,
+     {
+      "$date": "2026-08-01"
+     },
+     "Cancelled",
+     "",
+     ""
+    ],
+    [
+     6,
+     "Zeta",
+     "Grinder",
+     1,
+     {
+      "$date": "2026-07-01"
+     },
+     "ON HOLD",
+     "",
+     ""
+    ],
+    [
+     7,
+     "Eta",
+     "Router",
+     1,
+     {
+      "$date": "2026-06-01"
+     },
+     "Dispatched",
+     "yes",
+     ""
+    ],
+    [
+     8,
+     "Theta",
+     "CNC",
+     2,
+     {
+      "$date": "2026-09-10"
+     },
+     "Disputed",
+     "",
+     ""
+    ],
+    [
+     9,
+     "Iota",
+     "Bender",
+     1,
+     {
+      "$date": "2026-09-05"
+     },
+     "",
+     "",
+     ""
+    ],
+    [
+     10,
+     "Kappa",
+     "Welder",
+     1,
+     {
+      "$date": "2026-09-15"
+     },
+     "in process",
+     "",
+     ""
+    ]
+   ],
+   "number_formats": [
+    {
+     "row": 3,
+     "col": 5,
+     "rows": 10,
+     "format": "d/m/yyyy"
+    }
+   ]
+  },
+  {
+   "name": "SPARES",
+   "rows": [
+    [
+     "SPARES ORDERS",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "SR NO",
+     "CUSTOMER NAME",
+     "Type of Work",
+     "DISPATCH DATE",
+     "STATUS",
+     "TECHNICAL FREEZE?",
+     "INVOICE NO"
+    ],
+    [
+     "S1",
+     "Omega",
+     "",
+     {
+      "$date": "2026-09-30"
+     },
+     "Completed",
+     "",
+     "INV1"
+    ],
+    [
+     "S2",
+     "Sigma",
+     "Repair",
+     {
+      "$date": "2026-09-02"
+     },
+     "In Process",
+     "YES",
+     ""
+    ],
+    [
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "S3",
+     "Tau",
+     "",
+     "",
+     "Disputed",
+     "",
+     ""
+    ]
+   ],
+   "number_formats": [
+    {
+     "row": 3,
+     "col": 4,
+     "rows": 4,
+     "format": "dd-mmm-yyyy"
+    }
+   ]
+  }
+ ],
+ "today": "2026-09-16"
+}

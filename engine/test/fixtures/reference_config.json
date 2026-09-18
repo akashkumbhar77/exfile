@@ -1,0 +1,83 @@
+{
+  "config_version": 3,
+  "sheet_id": "1AbCreferenceSheet",
+  "org_id": "org_reference",
+  "schema_hashes": {
+    "MACHINES": "f2b28a0a8d2d570bd0cc04c77a1d00e5ef1d6ee98277de8b410a70c16d22d013",
+    "SPARES": "92986d86372bdae0825d7f7a5b2fc721db4b7597c0ab7b9f715119501a2868ee"
+  },
+  "header_row": 2,
+  "data_start_row": 3,
+  "canonical_headers": [
+    { "canonical": "DISPATCH DATE", "match": ["contains:DISPATCH"] },
+    { "canonical": "FREEZE?",       "match": ["contains:FREEZE"] },
+    { "canonical": "STATUS",        "match": ["equals:STATUS"] }
+  ],
+  "enums": {
+    "STATUS": {
+      "stages": [
+        { "value": "IN-PROCESS", "match": "contains:PROCESS",  "order": 1 },
+        { "value": "COMPLETED",  "match": "contains:COMPLET",  "order": 2 },
+        { "value": "DISPUTED",   "match": "contains:DISPUT",   "order": 3 },
+        { "value": "DISPATCHED", "match": "contains:DISPATCH", "order": 4 },
+        { "value": "CANCELLED",  "match": "contains:CANCEL",   "order": 5 }
+      ],
+      "unknown_order": 99
+    }
+  },
+  "rules": [
+    {
+      "id": "sort_by_stage",
+      "tabs": "all_with:STATUS",
+      "trigger": { "on_edit": { "columns": ["STATUS", "DISPATCH DATE", "FREEZE?"] } },
+      "action": "sort",
+      "keys": [
+        { "column": "STATUS", "using_enum": "STATUS" },
+        { "column": "DISPATCH DATE", "order": "asc", "blanks": "last", "type": "date" }
+      ]
+    },
+    {
+      "id": "status_formatting",
+      "tabs": "all_with:STATUS",
+      "trigger": { "after": "sort_by_stage" },
+      "action": "format",
+      "row_rules": [
+        { "when": { "enum": "STATUS", "is": "IN-PROCESS" }, "font": "#FF0000" },
+        { "when": { "enum": "STATUS", "is": "COMPLETED" },  "font": "#008000" },
+        { "when": { "enum": "STATUS", "is": "DISPUTED" },   "font": "#D4A017" },
+        { "when": { "enum": "STATUS", "is": "CANCELLED" },  "font": "#000000", "strike": true },
+        { "when": { "all": [ { "enum": "STATUS", "is": "IN-PROCESS" },
+                              { "date": "DISPATCH DATE", "before": "today" } ] },
+          "font": "#000000", "background": "#FCE4EC" }
+      ],
+      "cell_rules": [
+        { "column": "FREEZE?", "when": { "equals": "YES" }, "font": "#008000" }
+      ]
+    },
+    {
+      "id": "summary",
+      "trigger": { "debounced": { "quiet_seconds": 120 } },
+      "action": "consolidate",
+      "sources": "all_with:STATUS",
+      "target_tab": "SUMMARY",
+      "prepend_columns": [ { "name": "SOURCE SHEET", "value": "tab_name" } ],
+      "derived": [ { "name": "Type of Work", "fill_if_empty": "tab_name" } ],
+      "sort_like": "sort_by_stage",
+      "format_like": "status_formatting",
+      "lock": true,
+      "presentation": {
+        "title": "CONSOLIDATED ORDER SUMMARY — ALL SHEETS",
+        "column_widths": { "SOURCE SHEET": 120, "CUSTOMER NAME": 180, "MACHINE NAME": 300, "QTY": 70,
+                           "MACHINE DIRECTION": 150, "PROJECT NO (IF APPLI.)": 130, "WORK ORDER NO": 130,
+                           "DISPATCH DATE": 110, "STATUS": 130, "FREEZE?": 100, "SERIAL NO": 170,
+                           "ELE SERIAL NO": 120, "INVOICE NO": 120, "INVOICE DATE": 110, "TYPE OF WORK": 120 },
+        "default_column_width": 130
+      }
+    }
+  ],
+  "guards": {
+    "max_rows_per_run": 500,
+    "snapshot_destructive": true,
+    "hold_column": "!hold"
+  }
+}

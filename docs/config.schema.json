@@ -1,0 +1,1848 @@
+{
+  "$defs": {
+    "AfterTrigger": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "After",
+          "type": "string"
+        }
+      },
+      "required": [
+        "after"
+      ],
+      "title": "AfterTrigger",
+      "type": "object"
+    },
+    "AllCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "all": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AllCondition"
+              },
+              {
+                "$ref": "#/$defs/AnyCondition"
+              },
+              {
+                "$ref": "#/$defs/NotCondition"
+              },
+              {
+                "$ref": "#/$defs/EnumCondition"
+              },
+              {
+                "$ref": "#/$defs/DateCondition"
+              },
+              {
+                "$ref": "#/$defs/ValueCondition"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "All",
+          "type": "array"
+        }
+      },
+      "required": [
+        "all"
+      ],
+      "title": "AllCondition",
+      "type": "object"
+    },
+    "AnyCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "any": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AllCondition"
+              },
+              {
+                "$ref": "#/$defs/AnyCondition"
+              },
+              {
+                "$ref": "#/$defs/NotCondition"
+              },
+              {
+                "$ref": "#/$defs/EnumCondition"
+              },
+              {
+                "$ref": "#/$defs/DateCondition"
+              },
+              {
+                "$ref": "#/$defs/ValueCondition"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Any",
+          "type": "array"
+        }
+      },
+      "required": [
+        "any"
+      ],
+      "title": "AnyCondition",
+      "type": "object"
+    },
+    "CanonicalHeader": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical": {
+          "minLength": 1,
+          "title": "Canonical",
+          "type": "string"
+        },
+        "match": {
+          "items": {
+            "description": "Case-insensitive, trimmed header/value match: 'contains:X' or 'equals:X'.",
+            "pattern": "^(contains|equals):\\s*\\S.*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Match",
+          "type": "array"
+        }
+      },
+      "required": [
+        "canonical",
+        "match"
+      ],
+      "title": "CanonicalHeader",
+      "type": "object"
+    },
+    "CellFormatRule": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "'none' clears the fill (banding shows through); null leaves it unchanged.",
+          "title": "Background"
+        },
+        "column": {
+          "description": "A canonical header name.",
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font"
+        },
+        "strike": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strike"
+        },
+        "when": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "column",
+        "when"
+      ],
+      "title": "CellFormatRule",
+      "type": "object"
+    },
+    "ClearRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "clear",
+          "title": "Action",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "description": "A canonical header name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        },
+        "when": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "when",
+        "columns"
+      ],
+      "title": "ClearRule",
+      "type": "object"
+    },
+    "ConsolidateRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "consolidate",
+          "title": "Action",
+          "type": "string"
+        },
+        "derived": {
+          "items": {
+            "$ref": "#/$defs/DerivedColumn"
+          },
+          "title": "Derived",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "format_like": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format Like"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "lock": {
+          "default": true,
+          "title": "Lock",
+          "type": "boolean"
+        },
+        "prepend_columns": {
+          "items": {
+            "$ref": "#/$defs/PrependColumn"
+          },
+          "title": "Prepend Columns",
+          "type": "array"
+        },
+        "presentation": {
+          "$ref": "#/$defs/Presentation"
+        },
+        "sort_like": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sort Like"
+        },
+        "sources": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Sources"
+        },
+        "target_tab": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Target Tab",
+          "type": "string"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "action",
+        "sources",
+        "target_tab"
+      ],
+      "title": "ConsolidateRule",
+      "type": "object"
+    },
+    "CopyRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "copy",
+          "title": "Action",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "key_columns": {
+          "items": {
+            "description": "A canonical header name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Key Columns",
+          "type": "array"
+        },
+        "position": {
+          "default": "bottom",
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "title": "Position",
+          "type": "string"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "to_tab": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "To Tab",
+          "type": "string"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        },
+        "when": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "when",
+        "to_tab",
+        "key_columns"
+      ],
+      "title": "CopyRule",
+      "type": "object"
+    },
+    "DateCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "pattern": "^(today|\\d{4}-\\d{2}-\\d{2})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "pattern": "^(today|\\d{4}-\\d{2}-\\d{2})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before"
+        },
+        "date": {
+          "description": "A canonical header name.",
+          "minLength": 1,
+          "title": "Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "date"
+      ],
+      "title": "DateCondition",
+      "type": "object"
+    },
+    "DebouncedSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "quiet_seconds": {
+          "maximum": 3600,
+          "minimum": 5,
+          "title": "Quiet Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "quiet_seconds"
+      ],
+      "title": "DebouncedSpec",
+      "type": "object"
+    },
+    "DebouncedTrigger": {
+      "additionalProperties": false,
+      "properties": {
+        "debounced": {
+          "$ref": "#/$defs/DebouncedSpec"
+        }
+      },
+      "required": [
+        "debounced"
+      ],
+      "title": "DebouncedTrigger",
+      "type": "object"
+    },
+    "DedupeRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "dedupe",
+          "title": "Action",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "keep": {
+          "default": "first",
+          "enum": [
+            "first",
+            "last"
+          ],
+          "title": "Keep",
+          "type": "string"
+        },
+        "key_columns": {
+          "items": {
+            "description": "A canonical header name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Key Columns",
+          "type": "array"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "key_columns"
+      ],
+      "title": "DedupeRule",
+      "type": "object"
+    },
+    "DerivedColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "fill_if_empty": {
+          "const": "tab_name",
+          "title": "Fill If Empty",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "fill_if_empty"
+      ],
+      "title": "DerivedColumn",
+      "type": "object"
+    },
+    "EnumCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "anyOf": [
+            {
+              "description": "A canonical header name.",
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Column to classify; defaults to the enum's name.",
+          "title": "Column"
+        },
+        "enum": {
+          "minLength": 1,
+          "title": "Enum",
+          "type": "string"
+        },
+        "is": {
+          "minLength": 1,
+          "title": "Is",
+          "type": "string"
+        }
+      },
+      "required": [
+        "enum",
+        "is"
+      ],
+      "title": "EnumCondition",
+      "type": "object"
+    },
+    "EnumSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/EnumStage"
+          },
+          "minItems": 1,
+          "title": "Stages",
+          "type": "array"
+        },
+        "unknown_order": {
+          "description": "Sort position for values matching no stage. Must be greater than every stage order.",
+          "title": "Unknown Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stages",
+        "unknown_order"
+      ],
+      "title": "EnumSpec",
+      "type": "object"
+    },
+    "EnumStage": {
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "description": "Case-insensitive, trimmed header/value match: 'contains:X' or 'equals:X'.",
+          "pattern": "^(contains|equals):\\s*\\S.*$",
+          "title": "Match",
+          "type": "string"
+        },
+        "order": {
+          "title": "Order",
+          "type": "integer"
+        },
+        "value": {
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "match",
+        "order"
+      ],
+      "title": "EnumStage",
+      "type": "object"
+    },
+    "FormatRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "format",
+          "title": "Action",
+          "type": "string"
+        },
+        "cell_rules": {
+          "items": {
+            "$ref": "#/$defs/CellFormatRule"
+          },
+          "title": "Cell Rules",
+          "type": "array"
+        },
+        "default": {
+          "$ref": "#/$defs/Style",
+          "default": {
+            "background": "none",
+            "font": "#000000",
+            "strike": false
+          },
+          "description": "Base style for every governed row before row_rules apply (unknown values stay neutral)."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "row_rules": {
+          "items": {
+            "$ref": "#/$defs/RowFormatRule"
+          },
+          "title": "Row Rules",
+          "type": "array"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action"
+      ],
+      "title": "FormatRule",
+      "type": "object"
+    },
+    "Guards": {
+      "additionalProperties": false,
+      "properties": {
+        "hold_column": {
+          "default": "!hold",
+          "minLength": 1,
+          "title": "Hold Column",
+          "type": "string"
+        },
+        "max_rows_per_run": {
+          "default": 500,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Rows Per Run",
+          "type": "integer"
+        },
+        "snapshot_destructive": {
+          "const": true,
+          "default": true,
+          "description": "Always true: destructive rules snapshot first (invariant 6).",
+          "title": "Snapshot Destructive",
+          "type": "boolean"
+        }
+      },
+      "title": "Guards",
+      "type": "object"
+    },
+    "MoveRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "move",
+          "title": "Action",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "position": {
+          "default": "bottom",
+          "enum": [
+            "top",
+            "bottom"
+          ],
+          "title": "Position",
+          "type": "string"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "to_tab": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "To Tab",
+          "type": "string"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        },
+        "when": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "when",
+        "to_tab"
+      ],
+      "title": "MoveRule",
+      "type": "object"
+    },
+    "NotCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "not": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "Not"
+        }
+      },
+      "required": [
+        "not"
+      ],
+      "title": "NotCondition",
+      "type": "object"
+    },
+    "OnEditSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "description": "Edited canonical columns that fire the rule; empty = any column.",
+          "items": {
+            "description": "A canonical header name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        }
+      },
+      "title": "OnEditSpec",
+      "type": "object"
+    },
+    "OnEditTrigger": {
+      "additionalProperties": false,
+      "properties": {
+        "on_edit": {
+          "$ref": "#/$defs/OnEditSpec"
+        }
+      },
+      "required": [
+        "on_edit"
+      ],
+      "title": "OnEditTrigger",
+      "type": "object"
+    },
+    "PrependColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "const": "tab_name",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "PrependColumn",
+      "type": "object"
+    },
+    "Presentation": {
+      "additionalProperties": false,
+      "description": "Cosmetics for a consolidate target. The evaluator applies title/header colours; banding,\nwidths and date_format are not applied by the server engine yet (docs/BLOCKERS.md).",
+      "properties": {
+        "banding": {
+          "anyOf": [
+            {
+              "enum": [
+                "LIGHT_GREY",
+                "CYAN",
+                "GREEN",
+                "YELLOW",
+                "ORANGE",
+                "BLUE",
+                "TEAL",
+                "GREY",
+                "BROWN",
+                "LIGHT_GREEN",
+                "INDIGO",
+                "PINK"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "LIGHT_GREY",
+          "title": "Banding"
+        },
+        "column_widths": {
+          "additionalProperties": {
+            "maximum": 2000,
+            "minimum": 10,
+            "type": "integer"
+          },
+          "title": "Column Widths",
+          "type": "object"
+        },
+        "date_format": {
+          "default": "match_source",
+          "description": "'match_source' copies the first source dispatch-date format; otherwise a Sheets number format.",
+          "minLength": 1,
+          "title": "Date Format",
+          "type": "string"
+        },
+        "default_column_width": {
+          "default": 130,
+          "maximum": 2000,
+          "minimum": 10,
+          "title": "Default Column Width",
+          "type": "integer"
+        },
+        "header_background": {
+          "default": "#B6D7A8",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Header Background",
+          "type": "string"
+        },
+        "header_font": {
+          "default": "#000000",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Header Font",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "title_background": {
+          "default": "#38761D",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Title Background",
+          "type": "string"
+        },
+        "title_font": {
+          "default": "#FFFFFF",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Title Font",
+          "type": "string"
+        }
+      },
+      "title": "Presentation",
+      "type": "object"
+    },
+    "RowFormatRule": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "'none' clears the fill (banding shows through); null leaves it unchanged.",
+          "title": "Background"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font"
+        },
+        "strike": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strike"
+        },
+        "when": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllCondition"
+            },
+            {
+              "$ref": "#/$defs/AnyCondition"
+            },
+            {
+              "$ref": "#/$defs/NotCondition"
+            },
+            {
+              "$ref": "#/$defs/EnumCondition"
+            },
+            {
+              "$ref": "#/$defs/DateCondition"
+            },
+            {
+              "$ref": "#/$defs/ValueCondition"
+            }
+          ],
+          "title": "When"
+        }
+      },
+      "required": [
+        "when"
+      ],
+      "title": "RowFormatRule",
+      "type": "object"
+    },
+    "ScheduleSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "description": "5-field cron expression.",
+          "pattern": "^\\s*\\S+(\\s+\\S+){4}\\s*$",
+          "title": "Cron",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cron"
+      ],
+      "title": "ScheduleSpec",
+      "type": "object"
+    },
+    "ScheduleTrigger": {
+      "additionalProperties": false,
+      "properties": {
+        "schedule": {
+          "$ref": "#/$defs/ScheduleSpec"
+        }
+      },
+      "required": [
+        "schedule"
+      ],
+      "title": "ScheduleTrigger",
+      "type": "object"
+    },
+    "SortKey": {
+      "additionalProperties": false,
+      "properties": {
+        "blanks": {
+          "default": "last",
+          "enum": [
+            "first",
+            "last"
+          ],
+          "title": "Blanks",
+          "type": "string"
+        },
+        "column": {
+          "description": "A canonical header name.",
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "order": {
+          "default": "asc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "title": "Order",
+          "type": "string"
+        },
+        "type": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "date",
+            "number",
+            "text"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "using_enum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Using Enum"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "SortKey",
+      "type": "object"
+    },
+    "SortRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "sort",
+          "title": "Action",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/SortKey"
+          },
+          "minItems": 1,
+          "title": "Keys",
+          "type": "array"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "keys"
+      ],
+      "title": "SortRule",
+      "type": "object"
+    },
+    "Style": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "'none' clears the fill (banding shows through); null leaves it unchanged.",
+          "title": "Background"
+        },
+        "font": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9A-Fa-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font"
+        },
+        "strike": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strike"
+        }
+      },
+      "title": "Style",
+      "type": "object"
+    },
+    "ValidateRule": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "validate",
+          "title": "Action",
+          "type": "string"
+        },
+        "allow_invalid": {
+          "default": false,
+          "title": "Allow Invalid",
+          "type": "boolean"
+        },
+        "column": {
+          "description": "A canonical header name.",
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "from_enum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Enum"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "tabs": {
+          "anyOf": [
+            {
+              "description": "'all_with:<CANONICAL>' = every governed tab that has that column.",
+              "pattern": "^all_with:.+$",
+              "type": "string"
+            },
+            {
+              "description": "Explicit governed tab names.",
+              "items": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Tabs"
+        },
+        "trigger": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OnEditTrigger"
+            },
+            {
+              "$ref": "#/$defs/AfterTrigger"
+            },
+            {
+              "$ref": "#/$defs/DebouncedTrigger"
+            },
+            {
+              "$ref": "#/$defs/ScheduleTrigger"
+            }
+          ],
+          "title": "Trigger"
+        },
+        "values": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Values"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "tabs",
+        "action",
+        "column"
+      ],
+      "title": "ValidateRule",
+      "type": "object"
+    },
+    "ValueCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "anyOf": [
+            {
+              "description": "A canonical header name.",
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Required in row context; defaults to the cell's column in cell_rules.",
+          "title": "Column"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        },
+        "equals": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Equals"
+        },
+        "is_blank": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Blank"
+        }
+      },
+      "title": "ValueCondition",
+      "type": "object"
+    }
+  },
+  "$id": "https://sheets-automation.local/schemas/config.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_headers": {
+      "items": {
+        "$ref": "#/$defs/CanonicalHeader"
+      },
+      "title": "Canonical Headers",
+      "type": "array"
+    },
+    "config_version": {
+      "minimum": 1,
+      "title": "Config Version",
+      "type": "integer"
+    },
+    "data_start_row": {
+      "minimum": 2,
+      "title": "Data Start Row",
+      "type": "integer"
+    },
+    "enums": {
+      "additionalProperties": {
+        "$ref": "#/$defs/EnumSpec"
+      },
+      "propertyNames": {
+        "minLength": 1
+      },
+      "title": "Enums",
+      "type": "object"
+    },
+    "guards": {
+      "$ref": "#/$defs/Guards"
+    },
+    "header_row": {
+      "minimum": 1,
+      "title": "Header Row",
+      "type": "integer"
+    },
+    "org_id": {
+      "minLength": 1,
+      "title": "Org Id",
+      "type": "string"
+    },
+    "rules": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "clear": "#/$defs/ClearRule",
+            "consolidate": "#/$defs/ConsolidateRule",
+            "copy": "#/$defs/CopyRule",
+            "dedupe": "#/$defs/DedupeRule",
+            "format": "#/$defs/FormatRule",
+            "move": "#/$defs/MoveRule",
+            "sort": "#/$defs/SortRule",
+            "validate": "#/$defs/ValidateRule"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/SortRule"
+          },
+          {
+            "$ref": "#/$defs/FormatRule"
+          },
+          {
+            "$ref": "#/$defs/ConsolidateRule"
+          },
+          {
+            "$ref": "#/$defs/MoveRule"
+          },
+          {
+            "$ref": "#/$defs/CopyRule"
+          },
+          {
+            "$ref": "#/$defs/ValidateRule"
+          },
+          {
+            "$ref": "#/$defs/DedupeRule"
+          },
+          {
+            "$ref": "#/$defs/ClearRule"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Rules",
+      "type": "array"
+    },
+    "schema_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "description": "Governed tabs -> sha256 of their header row (see preflight).",
+      "minProperties": 1,
+      "propertyNames": {
+        "maxLength": 100,
+        "minLength": 1
+      },
+      "title": "Schema Hashes",
+      "type": "object"
+    },
+    "sheet_id": {
+      "minLength": 1,
+      "title": "Sheet Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "config_version",
+    "sheet_id",
+    "org_id",
+    "schema_hashes",
+    "header_row",
+    "data_start_row",
+    "rules"
+  ],
+  "title": "ConfigSpec",
+  "type": "object",
+  "x-schema-version": 1
+}
