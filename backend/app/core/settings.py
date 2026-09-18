@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     org_id: str = "org_default"  # single-tenant pilot; org_id is still on every row
 
+    # S3 onboarding agent. Provider: OpenAI (owner decision 2026-09-18, overrides CLAUDE.md's
+    # Anthropic lock; see DECISIONS). Models are settings: verified against the account's model
+    # list before the first call.
+    openai_api_key: str | None = None
+    llm_primary_model: str = "gpt-4.1-mini"
+    llm_escalation_model: str = "gpt-4.1"
+    llm_primary_attempts: int = 2  # failed proposals allowed on the primary model
+    llm_escalation_attempts: int = 1  # then on the escalation model, then a human ticket
+    llm_max_turns_per_attempt: int = 8
+
     @field_validator("enrolled_sheet_ids", mode="before")
     @classmethod
     def _split(cls, v: object) -> object:

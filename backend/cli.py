@@ -6,7 +6,7 @@ S2:  register --config path.json --approved-by WHO           (propose -> dry-run
      worker                                                  (RQ worker executing runs)
      run --sheet-id X [--dry-run]                            (registered sheet, now)
      undo --run-id Y [--force] | resume --sheet-id X | runs --sheet-id X | purge-snapshots
-`enroll` (S3, plain-English onboarding) is not built yet.
+S3:  enroll --sheet-id X --instruction TEXT --approved-by WHO  (onboarding agent, OpenAI)
 """
 
 from __future__ import annotations
@@ -174,6 +174,54 @@ def cmd_register(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_enroll(args: argparse.Namespace) -> int:
+    """S3: plain-English instruction -> onboarding agent -> dry-run -> owner approval."""
+    from app.agent.llm import OpenAIClient
+    from app.agent.onboarding import ModelPlan, onboard
+
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise SystemExit("OPENAI_API_KEY is not set in backend/.env")
+    factory = _factory(settings)
+    adapter = SheetsAdapter.from_service_account(_key(settings), DbRegistry(factory))
+    plan = ModelPlan(settings.llm_primary_model, settings.llm_escalation_model, settings.llm_primary_attempts,
+                     settings.llm_escalation_attempts, settings.llm_max_turns_per_attempt)
+    print(f"compiling with {plan.primary} (escalation {plan.escalation}) ...")
+    result = onboard(factory, adapter, OpenAIClient(settings.openai_api_key), plan, settings.org_id,
+                     args.sheet_id, args.instruction)
+    if result.status != "PENDING_APPROVAL" or result.config is None or result.report is None:
+        print(f"onboarding failed (session {result.session_id}): {result.reason}")
+        for f in result.failures:
+            print(f"  - {f}")
+        print("nothing was activated; a human ticket was recorded (event onboarding.needs_human)")
+        return 2
+    cfg = result.config
+    print(f"proposed config v{result.config_version} by {result.model} (session {result.session_id})")
+    print(f"  governed tabs: {sorted(cfg.schema_hashes)}")
+    for rule in cfg.rules:
+        print(f"  rule {rule.id:<22} {rule.action}")
+    rep = result.report
+    print(f"dry-run: {rep.status}")
+    for t, st in rep.per_tab.items():
+        print(f"  {t:<20} moved={st.rows_moved} formatted={st.rows_formatted} added={st.rows_added} "
+              f"removed={st.rows_removed} cleared={st.rows_cleared}")
+    for w in rep.warnings:
+        print(f"  warning: {w}")
+    if args.show_config:
+        print(cfg.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+    prompt = f"Approve config v{result.config_version} and go live? [y/N] "
+    approved = bool(args.yes) or input(prompt).strip().lower() == "y"
+    assert result.config_id is not None
+    with factory() as s, s.begin():
+        if not approved:
+            reject_config(s, result.config_id, args.approved_by)
+            print("rejected: nothing activated")
+            return 1
+        approve_config(s, result.config_id, args.approved_by)
+    print(f"approved by {args.approved_by}: sheet is ACTIVE")
+    return 0
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
     from app.workers.context import get_context
     from app.workers.watcher import watch_forever
@@ -267,6 +315,14 @@ def main(argv: list[str] | None = None) -> int:
     reg.add_argument("--title")
     reg.add_argument("--yes", action="store_true", help="approve without the interactive prompt")
     reg.set_defaults(func=cmd_register)
+
+    enr = sub.add_parser("enroll", help="S3: compile a plain-English instruction into a config, dry-run, approve")
+    enr.add_argument("--sheet-id", required=True)
+    enr.add_argument("--instruction", required=True)
+    enr.add_argument("--approved-by", required=True)
+    enr.add_argument("--yes", action="store_true", help="approve without the interactive prompt")
+    enr.add_argument("--show-config", action="store_true", help="print the proposed config JSON")
+    enr.set_defaults(func=cmd_enroll)
 
     sub.add_parser("watch", help="run the fleet watcher (Drive changes feed)").set_defaults(func=cmd_watch)
     sub.add_parser("worker", help="run the RQ worker that executes runs").set_defaults(func=cmd_worker)

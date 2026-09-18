@@ -146,3 +146,39 @@ class Flag(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="OPEN")
     proposed_config_id: Mapped[int | None] = mapped_column(ForeignKey("configs.id"), nullable=True)
     created_at: Mapped[datetime] = _now()
+
+
+class Profile(Base):
+    """Structural description of a sheet (B.7: structure + enum distributions, never row values)."""
+
+    __tablename__ = "profiles"
+    __table_args__ = (UniqueConstraint("sheet_id", "version"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("orgs.id"), nullable=False, index=True)
+    sheet_id: Mapped[int] = mapped_column(ForeignKey("sheets.id"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = _now()
+
+
+class LlmCall(Base):
+    """One row per LLM request (SPEC §6 "log every call"). Metadata only: no prompt or reply text."""
+
+    __tablename__ = "llm_calls"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("orgs.id"), nullable=False, index=True)
+    sheet_id: Mapped[int | None] = mapped_column(ForeignKey("sheets.id"), nullable=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)  # onboarding | repair | audit
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cached_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    tool_calls: Mapped[str] = mapped_column(String(300), nullable=False, server_default="")  # tool names only
+    status: Mapped[str] = mapped_column(String(32), nullable=False)  # OK | ERROR
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = _now()

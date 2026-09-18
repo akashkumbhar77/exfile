@@ -8,6 +8,7 @@ dependencies = [
     "cryptography>=42",
     "google-api-python-client>=2.130",
     "google-auth>=2.29",
+    "openai>=1.40",
     "psycopg[binary]>=3.2",
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3",

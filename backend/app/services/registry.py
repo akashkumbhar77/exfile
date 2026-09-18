@@ -64,6 +64,20 @@ def active_config(s: Session, sheet: Sheet) -> tuple[Config, ConfigSpec]:
     return row, ConfigSpec.model_validate(row.body)
 
 
+def ensure_pending_sheet(s: Session, org_id: str, google_sheet_id: str, title: str = "") -> Sheet:
+    """Enter a sheet into the registry (PENDING) before anything reads it (B.9). Existing rows are
+    returned unchanged, so re-onboarding an ACTIVE sheet keeps it running until a new config is approved."""
+    sheet = s.scalar(select(Sheet).where(Sheet.google_sheet_id == google_sheet_id))
+    if sheet is None:
+        sheet = Sheet(org_id=org_id, google_sheet_id=google_sheet_id, title=title, status=PENDING)
+        s.add(sheet)
+        s.flush()
+        record_event(s, sheet, "sheet.pending", {})
+    elif sheet.org_id != org_id:
+        raise RegistryError("sheet belongs to another org")
+    return sheet
+
+
 def propose_config(s: Session, org_id: str, config: ConfigSpec, title: str = "") -> tuple[Sheet, Config]:
     """Step 1 of enrollment: the sheet enters the registry as PENDING (so B.9 allows reading it for the
     dry-run) with its config PENDING_APPROVAL. The watcher ignores it until approval."""

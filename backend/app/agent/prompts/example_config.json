@@ -1,0 +1,62 @@
+{
+  "config_version": 1,
+  "sheet_id": "<filled by server>",
+  "org_id": "<filled by server>",
+  "schema_hashes": { "OPEN TICKETS": "auto", "BILLING TICKETS": "auto" },
+  "header_row": 1,
+  "data_start_row": 2,
+  "canonical_headers": [
+    { "canonical": "PRIORITY", "match": ["contains:PRIORITY", "contains:SEVERITY"] },
+    { "canonical": "DUE DATE", "match": ["contains:DUE"] },
+    { "canonical": "ESCALATED?", "match": ["contains:ESCALAT"] }
+  ],
+  "enums": {
+    "PRIORITY": {
+      "stages": [
+        { "value": "P1", "match": "contains:P1", "order": 1 },
+        { "value": "P2", "match": "contains:P2", "order": 2 },
+        { "value": "P3", "match": "contains:P3", "order": 3 }
+      ],
+      "unknown_order": 99
+    }
+  },
+  "rules": [
+    {
+      "id": "sort_by_priority",
+      "tabs": "all_with:PRIORITY",
+      "trigger": { "on_edit": { "columns": ["PRIORITY", "DUE DATE", "ESCALATED?"] } },
+      "action": "sort",
+      "keys": [
+        { "column": "PRIORITY", "using_enum": "PRIORITY" },
+        { "column": "DUE DATE", "order": "asc", "blanks": "last", "type": "date" }
+      ]
+    },
+    {
+      "id": "priority_colours",
+      "tabs": "all_with:PRIORITY",
+      "trigger": { "after": "sort_by_priority" },
+      "action": "format",
+      "row_rules": [
+        { "when": { "enum": "PRIORITY", "is": "P1" }, "font": "#CC0000" },
+        { "when": { "all": [ { "enum": "PRIORITY", "is": "P1" },
+                              { "date": "DUE DATE", "before": "today" } ] },
+          "background": "#FFF2CC" }
+      ],
+      "cell_rules": [
+        { "column": "ESCALATED?", "when": { "equals": "YES" }, "font": "#1155CC" }
+      ]
+    },
+    {
+      "id": "all_tickets",
+      "trigger": { "debounced": { "quiet_seconds": 120 } },
+      "action": "consolidate",
+      "sources": "all_with:PRIORITY",
+      "target_tab": "ALL TICKETS",
+      "prepend_columns": [ { "name": "QUEUE", "value": "tab_name" } ],
+      "sort_like": "sort_by_priority",
+      "format_like": "priority_colours",
+      "lock": true
+    }
+  ],
+  "guards": { "max_rows_per_run": 500, "snapshot_destructive": true, "hold_column": "!hold" }
+}
