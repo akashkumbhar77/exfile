@@ -36,6 +36,7 @@ from app.adapters.base import (
     WriteResult,
     WriteValues,
 )
+from app.adapters.google_http import ThreadHttp, execute
 from app.services.grid import (
     CellFormat,
     CellValue,
@@ -191,10 +192,12 @@ def parse_sheet(sheet: Mapping[str, Any]) -> tuple[Tab, TabMeta]:
 
 
 class SheetsAdapter:
-    def __init__(self, service: Any, registry: SourceRegistry, editor_email: str | None = None) -> None:
+    def __init__(self, service: Any, registry: SourceRegistry, editor_email: str | None = None,
+                 thread_http: ThreadHttp | None = None) -> None:
         self._svc = service
         self._registry = registry
         self._editor = editor_email
+        self._http = thread_http  # one authorized Http per thread (httplib2 isn't thread-safe)
 
     @classmethod
     def from_service_account(cls, key_path: str, registry: SourceRegistry) -> SheetsAdapter:
@@ -203,7 +206,7 @@ class SheetsAdapter:
 
         creds = service_account.Credentials.from_service_account_file(key_path, scopes=list(SCOPES))  # type: ignore[no-untyped-call]
         service = build("sheets", "v4", credentials=creds, cache_discovery=False)
-        return cls(service, registry, editor_email=creds.service_account_email)
+        return cls(service, registry, editor_email=creds.service_account_email, thread_http=ThreadHttp(creds))
 
     def _guard(self, source_ref: SourceRef) -> None:
         if not self._registry.is_registered(source_ref):
@@ -214,9 +217,9 @@ class SheetsAdapter:
 
     def read_grid(self, source_ref: SourceRef) -> Grid:
         self._guard(source_ref)
-        resp = self._svc.spreadsheets().get(
+        resp = execute(self._svc.spreadsheets().get(
             spreadsheetId=source_ref, includeGridData=True, fields=READ_FIELDS
-        ).execute()
+        ), self._http)
         tabs: list[Tab] = []
         metas: dict[str, TabMeta] = {}
         for sheet in sorted(resp.get("sheets", []), key=lambda s: s["properties"].get("index", 0)):
@@ -229,9 +232,9 @@ class SheetsAdapter:
     def read_meta(self, source_ref: SourceRef) -> dict[str, Any]:
         """Spreadsheet name, time zone and tab names only (access check). Registry-guarded (B.9)."""
         self._guard(source_ref)
-        resp = self._svc.spreadsheets().get(
+        resp = execute(self._svc.spreadsheets().get(
             spreadsheetId=source_ref, fields="properties(title,timeZone),sheets(properties(title))"
-        ).execute()
+        ), self._http)
         props = resp.get("properties", {})
         return {"title": props.get("title", ""), "timezone": props.get("timeZone", ""),
                 "tabs": [s["properties"]["title"] for s in resp.get("sheets", [])]}
@@ -244,11 +247,14 @@ class SheetsAdapter:
         self._guard(source_ref)
         if not ops:
             return WriteResult(0, 0, 0)
-        meta = self._svc.spreadsheets().get(spreadsheetId=source_ref, fields=META_FIELDS).execute()
+        meta = execute(self._svc.spreadsheets().get(spreadsheetId=source_ref, fields=META_FIELDS), self._http)
         sheets = {s["properties"]["title"]: s for s in meta.get("sheets", [])}
         ids: dict[str, int] = {t: int(s["properties"]["sheetId"]) for t, s in sheets.items()}
         requests, cells, fmts = self._requests(ops, sheets, ids)
-        self._svc.spreadsheets().batchUpdate(spreadsheetId=source_ref, body={"requests": requests}).execute()
+        # one atomic batchUpdate, never retried automatically: a 5xx doesn't prove nothing was applied,
+        # and addSheet/appendDimension/addProtectedRange are not idempotent. The next run re-plans instead.
+        execute(self._svc.spreadsheets().batchUpdate(spreadsheetId=source_ref, body={"requests": requests}),
+                self._http, retries=0)
         return WriteResult(len(requests), cells, fmts)
 
     # -- request building --

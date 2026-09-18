@@ -49,6 +49,28 @@ def envelope(request: Request, status: int, code: str, message: str, details: li
     return JSONResponse(status_code=status, content=body, headers={"X-Request-ID": request_id(request)})
 
 
+def classify_upstream(exc: BaseException) -> tuple[int, str, str] | None:
+    """Google / network failures get a precise, value-free envelope instead of 'internal error'."""
+    from googleapiclient.errors import HttpError
+
+    status = getattr(exc, "status_code", None) if isinstance(exc, HttpError) else None
+    if isinstance(exc, HttpError):
+        if status in (401, 403):
+            return 403, "sheet_forbidden", "the service account can't access this sheet; check it is shared as Editor"
+        if status == 404:
+            return 404, "sheet_not_found", "Google Sheets can't find this spreadsheet"
+        return 503, "google_unavailable", "Google Sheets returned an error; try again in a moment"
+    try:
+        from google.auth.exceptions import TransportError
+    except ImportError:  # pragma: no cover
+        TransportError = OSError  # type: ignore[misc,assignment]
+    if isinstance(exc, (TimeoutError, ConnectionError, TransportError)):
+        return 503, "google_unavailable", "Google Sheets didn't respond in time; try again in a moment"
+    if type(exc).__module__.startswith(("httplib2", "ssl", "socket")):
+        return 503, "google_unavailable", "the connection to Google Sheets failed; try again in a moment"
+    return None
+
+
 def install(app: FastAPI) -> None:
     @app.middleware("http")
     async def _request_id(request: Request, call_next: Any) -> Any:
@@ -73,6 +95,12 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        upstream = classify_upstream(exc)
+        if upstream is not None:
+            status, code, message = upstream
+            log.warning("api.upstream request_id=%s path=%s type=%s status=%d", request_id(request),
+                        request.url.path, type(exc).__name__, status)
+            return envelope(request, status, code, message)
         rid = request_id(request)
         log.error("api.unhandled request_id=%s path=%s type=%s\n%s", rid, request.url.path, type(exc).__name__,
                   "".join(traceback.format_tb(exc.__traceback__)))

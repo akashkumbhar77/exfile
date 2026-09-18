@@ -1,0 +1,71 @@
+.panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.status {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.warning {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--warning-bg);
+  border-radius: var(--radius-sm);
+}
+
+.warnings {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.counts {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.counts th,
+.counts td {
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.counts th:first-child,
+.counts thead th {
+  text-align: left;
+}
+
+.newTab {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.tab summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: var(--space-2) 0;
+}
+
+.retry {
+  font: inherit;
+  font-size: var(--text-sm);
+  margin-left: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+}
