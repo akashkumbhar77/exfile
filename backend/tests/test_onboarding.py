@@ -237,3 +237,44 @@ def test_prompt_renders_and_worked_example_is_a_valid_config() -> None:
     assert result.ok, [e.message for e in result.errors]
     # the example is deliberately a different domain than the reference workbook
     assert "STATUS" not in json.dumps(example["enums"])
+
+
+def test_ambiguous_header_pattern_is_rejected_with_the_exact_headers(env: Any) -> None:
+    """Live finding: contains:STATUS also matched CONTROL PANEL STATUS and merged the columns."""
+    bad = compiled_reference()
+    bad["canonical_headers"].append({"canonical": "PANEL", "match": ["contains:PANEL", "contains:IN-HOUSE"]})
+    bad["canonical_headers"] = [c if c["canonical"] != "STATUS" else {"canonical": "STATUS", "match": ["contains:S"]}
+                                for c in bad["canonical_headers"]]
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": bad}),
+                                     call("propose_config", {"config": compiled_reference()})]})
+    result = run(env, llm)
+    assert result.status == "PENDING_APPROVAL" and len(result.failures) == 1
+    assert '"stage": "headers"' in result.failures[0]
+    rejected = next(m["content"] for _, msgs in llm.sent for m in msgs if m["role"] == "tool" and '"headers"' in m["content"])
+    assert "SR NO" in rejected or "STATUS" in rejected  # names the colliding headers
+
+
+def test_consolidate_target_in_schema_hashes_is_dropped_by_the_server(env: Any) -> None:
+    cfg = compiled_reference()
+    cfg["schema_hashes"]["SUMMARY"] = "auto"
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": cfg})]})
+    result = run(env, llm)
+    assert result.status == "PENDING_APPROVAL" and result.config is not None
+    assert "SUMMARY" not in result.config.schema_hashes
+    reply = next(m["content"] for _, msgs in llm.sent for m in msgs if m["role"] == "tool") if len(llm.sent) > 1 else ""
+    assert reply == "" or "removed consolidate target" in reply
+
+
+def test_config_sent_as_json_string_is_accepted(env: Any) -> None:
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": json.dumps(compiled_reference())})]})
+    assert run(env, llm).status == "PENDING_APPROVAL"
+
+
+def test_validator_errors_carry_hints(env: Any) -> None:
+    bad = compiled_reference()
+    bad["rules"][1]["row_rules"][4]["when"]["all"][1] = {"date": {"column": "DISPATCH DATE", "before": "today"}}
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": bad}),
+                                     call("propose_config", {"config": compiled_reference()})]})
+    run(env, llm)
+    rejected = next(m["content"] for _, msgs in llm.sent for m in msgs if m["role"] == "tool")
+    assert "`date` is the column name as a string" in rejected

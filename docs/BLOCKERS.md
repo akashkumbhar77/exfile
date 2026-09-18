@@ -64,9 +64,17 @@ separate decision for the owner.
 The owner chose OpenAI (see DECISIONS "S3" and the CLAUDE.md override note). The agent is
 built and tested with a scripted LLM.
 
-## OPEN: S3 live exit criteria need `OPENAI_API_KEY`
-- **No key in `backend/.env` yet.** Once it's added:
-  - `enroll` on the real workbook must give a config whose dry-run matches the hand-written one.
-  - A nonsense instruction must fail readably, never producing an ACTIVE config.
-- **Model defaults `gpt-4.1-mini` / `gpt-4.1` aren't verified against the account yet.**
-  `enroll` checks `models.list` first and fails clearly if either model is missing.
+## S3 exit criteria on the real workbook (2026-09-18)
+- [x] **A nonsense instruction ends in a human-readable failure and never an ACTIVE config**
+  (session onb_b24503822f18).
+- [~] **Plain English → same behaviour as the hand-written config.**
+  - With `gpt-5-mini` → `gpt-5.1` and prompt v3, every tab matches exactly (values, headers,
+    colours) except the SUMMARY title banner. Pending configs v6 and v7 on sheet 2.
+  - With the default `gpt-4.1` models it's unreliable (see DECISIONS "S3 live findings").
+
+Owner decisions needed:
+1. **Model defaults:** switch `LLM_PRIMARY_MODEL` / `LLM_ESCALATION_MODEL` to `gpt-5-mini` /
+   `gpt-5.1`?
+2. **SUMMARY title:** accept no title banner on compiled configs, or allow tab titles through
+   to the model, or keep an existing target's title when a config sets none?
+3. **Pending configs v2–v7 on sheet 2** (trial proposals): reject them, or approve one?

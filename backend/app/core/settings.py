@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from typing_extensions import Annotated
 
@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     # S3 onboarding agent. Provider: OpenAI (owner decision 2026-09-18, overrides CLAUDE.md's
     # Anthropic lock; see DECISIONS). Models are settings: verified against the account's model
     # list before the first call.
-    openai_api_key: str | None = None
+    openai_api_key: str | None = Field(  # type: ignore[pydantic-alias]  # OPEN_AI_API_KEY accepted too
+        default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_AI_API_KEY")
+    )
     llm_primary_model: str = "gpt-4.1-mini"
     llm_escalation_model: str = "gpt-4.1"
     llm_primary_attempts: int = 2  # failed proposals allowed on the primary model

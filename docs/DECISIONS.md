@@ -474,3 +474,35 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   sent to the LLM.
 - **`llm_calls`** stores metadata only: model, attempt, turn, tokens (including cached),
   latency, tool names and status. It never stores prompt or reply text.
+
+### S3 live findings (2026-09-18, sheet 2, same instruction each run)
+- **`gpt-4.1-mini` → `gpt-4.1`: 1 usable result in 7 runs.** They repeated the same schema
+  mistakes after feedback:
+  - nested `date` objects
+  - governing or targeting the SUMMARY tab
+  - `contains:STATUS`, which also matched CONTROL PANEL STATUS and merged the two columns
+- **`gpt-5-mini` → `gpt-5.1`: 4 of 4 runs produced a config.**
+  - Each run first hit the new column-merge check, then fixed its proposal.
+  - With prompt v3, all 5 category tabs and all SUMMARY data, headers and colours match the
+    hand-written config exactly.
+  - The only remaining difference is the SUMMARY title banner (below).
+  - Cost: about 48k input tokens (30–46k of them cached) and 5–8k output tokens per run.
+- **Nonsense instruction** (emails, translation, courier) → FAILED with a readable
+  explanation, no config, a human ticket, and the live config unchanged.
+- **Agent-side checks added.** They run before the dry-run; the validator contract is
+  unchanged.
+  1. A pattern in `canonical_headers` that matches 2+ different headers on one governed tab
+     is rejected, naming the headers. This prevents silent column merging.
+  2. The server drops consolidate targets from `schema_hashes`, which it owns anyway, and
+     tells the model.
+  3. A config sent as a JSON string is parsed.
+  4. Validator errors carry plain-language hints for common mistakes.
+  5. The dry-run reply lists each consolidate target's resulting headers next to its
+     existing headers.
+- **Prompt v3 adds** flat condition syntax, "targets only via sort_like/format_like",
+  fragment stage matching, reuse of existing header spellings, and "later format rules win".
+  All of it is generic guidance, with nothing specific to the owner's workbook.
+- **The SUMMARY title banner can't be inferred.** It's cell text in row 1, and B.7 only lets
+  headers, tab names and status labels reach the model, so a compiled config has no
+  `presentation.title`. Owner decision pending.
+- **`OPEN_AI_API_KEY` is accepted** as an alias of `OPENAI_API_KEY` (the owner's `.env` uses it).

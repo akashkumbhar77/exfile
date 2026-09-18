@@ -32,6 +32,7 @@ from app.agent.tools import ToolError, sample_rows
 from app.models import LlmCall, Profile
 from app.schemas.config import ConfigSpec
 from app.services.dry_run import DryRunReport
+from app.services.grid import cell_text
 from app.services.live import prepare_run
 from app.services.preflight import compute_schema_hash
 from app.services.registry import ensure_org, ensure_pending_sheet, propose_config, record_event
@@ -41,7 +42,7 @@ from app.services.validator import validate_config
 log = logging.getLogger("app.agent")
 
 PROMPTS = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "onboarding-v1"
+PROMPT_VERSION = "onboarding-v3"
 DECLINE_PREFIX = "CANNOT:"
 
 
@@ -117,6 +118,11 @@ class _Session:
         raise ToolError(f"unknown tool {name!r}")
 
     def propose(self, raw: Any, model: str) -> str:
+        if isinstance(raw, str):  # some models send the object as a JSON string
+            try:
+                raw = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise _Attempt(f"propose_config: `config` is not valid JSON ({exc.msg})") from exc
         if not isinstance(raw, dict):
             raise _Attempt("propose_config: `config` must be a JSON object")
         raw = dict(raw)
@@ -124,6 +130,13 @@ class _Session:
         hashes = raw.get("schema_hashes")
         if not isinstance(hashes, dict) or not hashes:
             raise _Attempt("schema_hashes must list the governed tabs, e.g. {\"TAB\": \"auto\"}")
+        notes: list[str] = []
+        # schema_hashes is server-owned: consolidate targets are generated, never governed
+        targets = {str(r.get("target_tab")) for r in raw.get("rules", []) if isinstance(r, dict)
+                   and r.get("action") == "consolidate" and r.get("target_tab")}
+        for t in sorted(targets & set(hashes)):
+            notes.append(f"removed consolidate target {t!r} from schema_hashes (targets are never governed)")
+        hashes = {k: v for k, v in hashes.items() if k not in targets}
         header_row = raw.get("header_row", 1)
         filled: dict[str, str] = {}
         tab_names = self.grid.workbook.names()  # structure only
@@ -136,9 +149,13 @@ class _Session:
 
         result = validate_config(raw)
         if not result.ok or result.config is None:
-            errors = [{"pointer": e.pointer, "code": e.code, "message": e.message} for e in result.errors]
-            raise _Attempt(json.dumps({"ok": False, "stage": "validate", "errors": errors}))
+            errors = [{"pointer": e.pointer, "code": e.code, "message": e.message, **_hint(e.pointer, e.code)}
+                      for e in result.errors]
+            raise _Attempt(json.dumps({"ok": False, "stage": "validate", "errors": errors, "notes": notes}))
         config = result.config
+        ambiguous = ambiguous_header_patterns(config, self.grid)
+        if ambiguous:
+            raise _Attempt(json.dumps({"ok": False, "stage": "headers", "errors": ambiguous, "notes": notes}))
         prepared = prepare_run(self.adapter, self.sheet_ref, config, RunEvent("change"), now=self.now, grid=self.grid)
         report = prepared.report
         summary = {
@@ -147,6 +164,8 @@ class _Session:
                        "error": r.error, "blocked": r.blocked} for r in report.rules],
             "per_tab": {t: s.model_dump() for t, s in report.per_tab.items()},
             "warnings": report.warnings[:20],
+            "consolidate_targets": target_headers(config, self.grid, prepared.result.workbook),
+            "notes": notes,
         }
         if report.status != "OK":
             raise _Attempt(json.dumps({"ok": False, "stage": "dry_run", "dry_run": summary}))
@@ -174,6 +193,60 @@ class _Session:
                 tool_calls=",".join(t.name for t in reply.tool_calls)[:300] if reply else "",
                 status="ERROR" if error else "OK", error=error,
             ))
+
+
+_HINTS: list[tuple[str, str, str]] = [
+    # (pointer suffix, code substring, hint)
+    ("/date", "string", "`date` is the column name as a string: {\"date\": \"DISPATCH DATE\", \"before\": \"today\"}"),
+    ("/equals", "", "`equals` takes a string: {\"column\": \"FREEZE?\", \"equals\": \"YES\"}"),
+    ("/contains", "", "`contains` takes a string"),
+    ("/target_tab", "target_is_governed", "remove the target tab from schema_hashes"),
+    ("", "target_in_sources", "never list a consolidate target in tabs/sources; use sort_like/format_like"),
+]
+
+
+def _hint(pointer: str, code: str) -> dict[str, str]:
+    for suffix, code_part, hint in _HINTS:
+        if (not suffix or pointer.endswith(suffix)) and code_part in code:
+            return {"hint": hint}
+    return {}
+
+
+def ambiguous_header_patterns(config: ConfigSpec, grid: Grid) -> list[dict[str, Any]]:
+    """A canonical pattern that matches two different headers on one governed tab would merge those
+    columns (e.g. contains:STATUS also matching CONTROL PANEL STATUS). Reject with the exact headers."""
+    from app.services.headers import match_expr
+
+    problems: list[dict[str, Any]] = []
+    for tab_name in config.schema_hashes:
+        tab = grid.workbook.tab(tab_name)
+        if tab is None:
+            continue
+        headers = [cell_text(h).strip() for h in tab.row(config.header_row) if cell_text(h).strip()]
+        for ch in config.canonical_headers:
+            hits = [h for h in headers if any(match_expr(m, h) for m in ch.match)]
+            if len(hits) > 1:
+                problems.append({
+                    "tab": tab_name, "canonical": ch.canonical, "patterns": list(ch.match), "matches": hits,
+                    "hint": "this would merge different columns; use equals: patterns or a more specific fragment",
+                })
+    return problems
+
+
+def target_headers(config: ConfigSpec, grid: Grid, projected: Any) -> dict[str, Any]:
+    """Headers the consolidate targets will have, next to the existing target's headers (structure only)."""
+    out: dict[str, Any] = {}
+    for rule in config.rules:
+        if rule.action != "consolidate":
+            continue
+        target = getattr(rule, "target_tab")
+        new = projected.tab(target)
+        old = grid.workbook.tab(target)
+        out[target] = {
+            "resulting_headers": [cell_text(h).strip() for h in new.row(config.header_row)] if new else [],
+            "existing_headers": [cell_text(h).strip() for h in old.row(config.header_row)] if old else None,
+        }
+    return out
 
 
 def _sheet(s: Session, pk: int) -> Any:
