@@ -18,7 +18,12 @@ from app.services.grid import CellFormat, Workbook, is_empty
 
 
 class FakeHttpError(Exception):
-    pass
+    """Mimics googleapiclient HttpError's `status_code` (parsed from the '<code>: ' prefix)."""
+
+    @property
+    def status_code(self) -> int | None:
+        head = str(self).split(":", 1)[0]
+        return int(head) if head.isdigit() else None
 
 
 def _rgb(hex_color: str) -> dict[str, float]:
@@ -40,6 +45,7 @@ class FakeSheet:
 @dataclass
 class FakeSpreadsheet:
     time_zone: str = "Asia/Kolkata"
+    title: str = "Order Tracker (test)"
     sheets: list[FakeSheet] = field(default_factory=list)
     next_protected_id: int = 1000
 
@@ -58,6 +64,7 @@ class FakeSheetsService:
         self.calls: list[tuple[str, str]] = []  # (method, spreadsheet id)
         self.fail_next_batch = False
         self.on_commit: Any = None  # FakeDriveService hook: a committed write bumps modifiedTime
+        self.forbidden: set[str] = set()  # spreadsheet ids not shared with the service account
 
     def spreadsheets(self) -> FakeSheetsService:
         return self
@@ -68,6 +75,8 @@ class FakeSheetsService:
 
     def _get(self, sid: str, grid: bool) -> dict[str, Any]:
         self.calls.append(("get", sid))
+        if sid in self.forbidden:
+            raise FakeHttpError("403: The caller does not have permission")
         doc = self.docs.get(sid)
         if doc is None:
             raise FakeHttpError("404: Requested entity was not found.")
@@ -87,7 +96,7 @@ class FakeSheetsService:
                     row_data.append({"values": [self._cell_out(sh.cells.get((r, c), {})) for c in range(max_c + 1)]})
                 entry["data"] = [{"rowData": row_data}]
             sheets.append(entry)
-        return {"properties": {"timeZone": doc.time_zone}, "sheets": sheets}
+        return {"properties": {"timeZone": doc.time_zone, "title": doc.title}, "sheets": sheets}
 
     @staticmethod
     def _cell_out(cell: dict[str, Any]) -> dict[str, Any]:

@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     llm_escalation_attempts: int = 1  # then on the escalation model, then a human ticket
     llm_max_turns_per_attempt: int = 8
 
+    # PATCH-003 API: static bearer token (pilot auth), CORS for the Vite dev server
+    api_token: str | None = None
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:5173"])
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
     @field_validator("enrolled_sheet_ids", mode="before")
     @classmethod
     def _split(cls, v: object) -> object:

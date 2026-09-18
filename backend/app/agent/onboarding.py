@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -121,6 +122,7 @@ class _Session:
     messages: list[dict[str, Any]] = field(default_factory=list)
     accepted: OnboardingResult | None = None
     use_skills: bool = False
+    progress: Callable[[str], None] = field(default=lambda _state: None)
     reviewed_targets: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
@@ -175,6 +177,7 @@ class _Session:
             filled[str(tab_name)] = compute_schema_hash(tab.row(header_row))
         raw["schema_hashes"] = filled
 
+        self.progress("validating")
         result = validate_config(raw)
         if not result.ok or result.config is None:
             errors = [{"pointer": e.pointer, "code": e.code, "message": e.message, **_hint(e.pointer, e.code)}
@@ -184,6 +187,7 @@ class _Session:
         ambiguous = ambiguous_header_patterns(config, self.grid)
         if ambiguous:
             raise _Attempt(json.dumps({"ok": False, "stage": "headers", "errors": ambiguous, "notes": notes}))
+        self.progress("dry_running")
         prepared = prepare_run(self.adapter, self.sheet_ref, config, RunEvent("change"), now=self.now, grid=self.grid)
         report = prepared.report
         targets_info = target_headers(config, self.grid, prepared.result.workbook)
@@ -310,7 +314,8 @@ def _sheet(s: Session, pk: int) -> Any:
 
 
 def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, plan: ModelPlan, org_id: str,
-            sheet_ref: str, instruction: str, now: datetime | None = None) -> OnboardingResult:
+            sheet_ref: str, instruction: str, now: datetime | None = None,
+            progress: Callable[[str], None] | None = None) -> OnboardingResult:
     session_id = "onb_" + uuid.uuid4().hex[:12]
     if not instruction.strip():
         return OnboardingResult("FAILED", session_id, reason="the instruction is empty")
@@ -318,9 +323,13 @@ def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, pl
     with factory() as s, s.begin():
         ensure_org(s, org_id)
         sheet_pk = ensure_pending_sheet(s, org_id, sheet_ref).id  # B.9: registered before we read it
+    report_progress = progress or (lambda _state: None)
+    report_progress("profiling")
     grid = adapter.read_grid(sheet_ref)
     profile = build_profile(grid.workbook, grid.timezone)
     with factory() as s, s.begin():
+        if grid.title:
+            _sheet(s, sheet_pk).title = grid.title[:300]  # spreadsheet name: metadata, not cell data
         version = (s.scalar(select(Profile.version).where(Profile.sheet_id == sheet_pk)
                             .order_by(Profile.version.desc())) or 0) + 1
         s.add(Profile(org_id=org_id, sheet_id=sheet_pk, version=version, body=profile))
@@ -336,7 +345,7 @@ def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, pl
                      "LLM_ESCALATION_MODEL", [])
 
     sess = _Session(factory, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now,
-                    use_skills=plan.use_skills)
+                    use_skills=plan.use_skills, progress=report_progress)
     sess.messages = [
         {"role": "system", "content": system_prompt(plan.use_skills)},
         {"role": "system", "content": "Workbook profile:\n" + json.dumps(profile, ensure_ascii=False)},
@@ -365,6 +374,7 @@ def _run_attempt(sess: _Session, model: str, attempt: int, max_turns: int) -> st
     """Run turns until the model proposes (accepted or rejected), declines, or runs out of turns.
     Returns a failure description ('' never: acceptance is signalled via sess.accepted)."""
     for turn in range(1, max_turns + 1):
+        sess.progress("compiling")
         try:
             reply = sess.llm.chat(model, sess.messages, tools_for(sess.use_skills))
         except LlmError as exc:

@@ -247,10 +247,24 @@ def cmd_worker(args: argparse.Namespace) -> int:
 
     from app.workers.context import get_context
 
+    from rq import Queue
+
+    from app.workers.onboarding_job import QUEUE as ONBOARDING
+
     ctx = get_context()
-    queue = ctx.queue.queue  # type: ignore[attr-defined]
+    queues = [ctx.queue.queue, Queue(ONBOARDING, connection=ctx.redis)]  # type: ignore[attr-defined]
     cls = SimpleWorker if os.name == "nt" else Worker  # no fork() on Windows
-    cls([queue], connection=ctx.redis).work(with_scheduler=False)
+    cls(queues, connection=ctx.redis).work(with_scheduler=False)
+    return 0
+
+
+def cmd_api(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    if not get_settings().api_token:
+        raise SystemExit("API_TOKEN is not set in backend/.env (the UI sends it as a bearer token)")
+    uvicorn.run("app.api.main:create_app", factory=True, host=args.host, port=args.port,
+                log_level="info", access_log=True)  # access log = method + path + status only
     return 0
 
 
@@ -337,7 +351,11 @@ def main(argv: list[str] | None = None) -> int:
     enr.set_defaults(func=cmd_enroll)
 
     sub.add_parser("watch", help="run the fleet watcher (Drive changes feed)").set_defaults(func=cmd_watch)
-    sub.add_parser("worker", help="run the RQ worker that executes runs").set_defaults(func=cmd_worker)
+    sub.add_parser("worker", help="run the RQ worker (runs + onboarding jobs)").set_defaults(func=cmd_worker)
+    api = sub.add_parser("api", help="serve the HTTP API for the dashboard (/api/v1)")
+    api.add_argument("--host", default="127.0.0.1")
+    api.add_argument("--port", type=int, default=8000)
+    api.set_defaults(func=cmd_api)
 
     undo = sub.add_parser("undo", help="restore the tabs a run changed to their exact prior state")
     undo.add_argument("--run-id", required=True)

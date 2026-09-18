@@ -39,7 +39,7 @@ def norm_format(f: CellFormat) -> CellFormat:
     return CellFormat(font=font, background=bg, strike=f.strike)
 
 
-def _same_value(a: CellValue, b: CellValue) -> bool:
+def same_value(a: CellValue, b: CellValue) -> bool:
     if is_empty(a) and is_empty(b):
         return True
     if isinstance(a, bool) or isinstance(b, bool):
@@ -102,7 +102,7 @@ def diff_workbooks(base: Grid, target: Workbook) -> list[GridOp]:
         meta = base.tabs.get(after.name)
         value_rows = _changed_rows(
             height,
-            lambda r: not all(_same_value(a, b) for a, b in zip(_row(before, r, width), _row(after, r, width))),
+            lambda r: not all(same_value(a, b) for a, b in zip(_row(before, r, width), _row(after, r, width))),
         )
         for s, e in _runs(value_rows):
             block = [_row(after, r, width) for r in range(s, e)]

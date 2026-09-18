@@ -572,3 +572,56 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   - Proposed as is, it differs from the hand-written config only in the SUMMARY banner.
   - With the owner title applied, it's identical on every tab and makes 0 changes to the
     live sheet.
+
+## S5 pre-frontend: API for SPEC-PATCH-003
+
+- **The HTTP API is new.** Before this, only the CLI existed. It's FastAPI under `/api/v1`
+  (SPEC §3 paths), plus the PATCH-003 section-B additions. `docs/API-FIELDS.md` maps every page
+  field to its endpoint and lists the gaps closed.
+- **Auth (PATCH-003 C):** a static `API_TOKEN` compared in constant time. With no token
+  configured the API answers 503; there's no open mode.
+  - `actor` in approve and reject bodies is a free-text name recorded on the config. There are
+    no users.
+- **One error envelope:** `{"error": {code, message, request_id, details?}}` for every failure.
+  - Unknown exceptions return "internal error" plus the request id, and are logged with their
+    type and traceback frames only. The frames are source lines, never runtime values; the
+    exception message isn't logged.
+  - Validation errors list field locations and reasons, never the submitted input.
+  - Tests check that a runtime cell value inside an exception reaches neither the response
+    nor the logs (B.6 on the envelope path).
+- **Preview (PATCH-003 A.3, B.6):** `GET /configs/{id}/dry-run/preview` is computed on demand
+  from the same plan the executor uses, returned, and never persisted or logged. A test checks
+  that row counts in runs, events, llm_calls, snapshots and configs don't change.
+- **The access check registers first.** `POST /sheets/access-check` adds the sheet as PENDING
+  and then reads metadata only, so B.9 ("open only registered file ids") holds literally. A
+  failed check leaves a harmless PENDING row.
+- **Enrolment is an RQ job** on the `onboarding` queue; the worker now listens on `runs` and
+  `onboarding`. Progress is the job's meta state (profiling, compiling, validating,
+  dry_running, then proposed or failed), fed by a progress callback in `onboard()`.
+- **Flags are derived and read-only:** drift pause and onboarding hand-off. The flags table
+  stays schema-only (PATCH-001 B).
+- **Undo availability** comes from the snapshot rows: none (the run changed nothing), purged
+  or past retention (with the retention days in the reason), or already undone.
+- **Time:** views use real time for ages and expiry (rows are stamped by Postgres `now()`).
+  The injectable clock is used only for planning ("today") and the debouncer.
+- **CORS** allows `CORS_ORIGINS` (default `http://localhost:5173`): methods GET/POST, headers
+  Authorization/Content-Type, no credentials. In development the Vite server proxies `/api` to
+  :8000 (`frontend/vite.config.ts`).
+- **`describe.py` (PATCH-003 A.2)** is deterministic templates per action, trigger and
+  condition. Colours are named from a fixed palette with their hex. A golden-text test covers
+  the reference config (`tests/fixtures/reference_readback.txt`), plus one test per action.
+
+### S5 styling (PATCH-003 A.5): **CSS Modules**
+- **Why CSS Modules:**
+  - They're built into Vite: no extra dependency, PostCSS config or class-name build step.
+  - Styles are scoped per component, and the choice fits the "one lightweight approach"
+    constraint.
+  - A small dashboard (four pages, tables, dialogs, status chips) doesn't need a utility
+    framework's design system.
+- **Conventions:**
+  - one `*.module.css` next to each component
+  - design tokens (colours, spacing, font sizes, the status-chip palette) as CSS custom
+    properties in a single `src/styles/tokens.css`
+  - `camelCaseOnly` class names
+- **Not used:** Tailwind (it adds a build pipeline and utility classes throughout the markup),
+  and component libraries beyond headless primitives (per PATCH-003).

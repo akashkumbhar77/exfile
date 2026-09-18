@@ -46,6 +46,7 @@ class Grid:
     workbook: Workbook
     timezone: str = "UTC"
     tabs: Mapping[str, TabMeta] = field(default_factory=dict)
+    title: str = ""  # spreadsheet name (metadata)
 
     def __repr__(self) -> str:
         return f"Grid(timezone={self.timezone!r}, workbook={self.workbook!r})"

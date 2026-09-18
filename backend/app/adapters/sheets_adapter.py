@@ -53,7 +53,7 @@ _EPOCH = datetime(1899, 12, 30)
 _DATE_TYPES = {"DATE", "DATE_TIME"}
 
 READ_FIELDS = (
-    "properties.timeZone,"
+    "properties(timeZone,title),"
     "sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)),"
     "protectedRanges(protectedRangeId,range,description),"
     "data(rowData(values(effectiveValue,formattedValue,effectiveFormat.numberFormat,"
@@ -223,8 +223,18 @@ class SheetsAdapter:
             tab, meta = parse_sheet(sheet)
             tabs.append(tab)
             metas[tab.name] = meta
-        tz = resp.get("properties", {}).get("timeZone") or "UTC"
-        return Grid(Workbook(tabs), timezone=tz, tabs=metas)
+        props = resp.get("properties", {})
+        return Grid(Workbook(tabs), timezone=props.get("timeZone") or "UTC", tabs=metas, title=props.get("title", ""))
+
+    def read_meta(self, source_ref: SourceRef) -> dict[str, Any]:
+        """Spreadsheet name, time zone and tab names only (access check). Registry-guarded (B.9)."""
+        self._guard(source_ref)
+        resp = self._svc.spreadsheets().get(
+            spreadsheetId=source_ref, fields="properties(title,timeZone),sheets(properties(title))"
+        ).execute()
+        props = resp.get("properties", {})
+        return {"title": props.get("title", ""), "timezone": props.get("timeZone", ""),
+                "tabs": [s["properties"]["title"] for s in resp.get("sheets", [])]}
 
     def detect_changes(self, source_ref: SourceRef) -> ChangeInfo:
         # SPEC-PATCH-002 A: detection is the fleet-level Drive changes feed (S2), not per sheet.

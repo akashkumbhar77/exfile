@@ -32,6 +32,9 @@ class WorkerContext:
     queue: RunQueue
     org_id: str
     clock: Callable[[], datetime] = field(default=utcnow)
+    llm_factory: Callable[[], Any] | None = None  # onboarding LLM client (None -> from settings)
+    plan: Any = None  # onboarding ModelPlan (None -> from settings)
+    service_account_email: str = ""
 
 
 _override: WorkerContext | None = None
@@ -71,6 +74,10 @@ def build_default_context() -> WorkerContext:
     registry = DbRegistry(factory)
     key = str(settings.google_application_credentials)
     redis = Redis.from_url(settings.redis_url)
+    import json
+
+    with open(key, encoding="utf-8") as fh:
+        sa_email = str(json.load(fh).get("client_email", ""))
     return WorkerContext(
         factory=factory,
         adapter=SheetsAdapter.from_service_account(key, registry),
@@ -80,4 +87,5 @@ def build_default_context() -> WorkerContext:
         debouncer=Debouncer(redis, timedelta(seconds=settings.debounce_seconds)),
         queue=RqRunQueue(redis),
         org_id=settings.org_id,
+        service_account_email=sa_email,
     )

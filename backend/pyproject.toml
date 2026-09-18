@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.13",
     "cryptography>=42",
+    "fastapi>=0.115",
     "google-api-python-client>=2.130",
     "google-auth>=2.29",
     "openai>=1.40",
@@ -16,6 +17,7 @@ dependencies = [
     "rq>=1.16",
     "sqlalchemy>=2.0.30",
     "tzdata>=2024.1",
+    "uvicorn>=0.30",
 ]
 
 [dependency-groups]
@@ -25,6 +27,7 @@ dev = [
     "google-api-python-client-stubs>=1.40.0",
     "pgserver>=0.1.4",
     "fakeredis[lua]>=2.38.0",
+    "httpx>=0.27",
 ]
 
 [tool.uv]

@@ -47,6 +47,19 @@ services:
     restart: unless-stopped
     profiles: ["app"]
 
+  api:
+    build: ./backend
+    env_file: backend/.env
+    environment: *stack_env
+    volumes: *secrets
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    command: ["python", "cli.py", "api", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    profiles: ["app"]
+
   worker:
     build: ./backend
     env_file: backend/.env
