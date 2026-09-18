@@ -662,3 +662,19 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   - The full test suite, CLI commands, the API, the worker and the watcher all ran without
     recreating it.
   - Nothing in the codebase needed a fix; the folder was removed at the time.
+
+### google_http: thread-safe Google calls (live finding, 2026-09-18)
+- **What happened:** the Approvals page loads the readback and the preview at the same time,
+  and both read the sheet. One of the two live requests failed with a TLS read timeout during a
+  token refresh. The likely cause is httplib2 clients shared across FastAPI's threadpool (they
+  aren't thread-safe); a plain network timeout is also possible.
+- **Fix, in `app/adapters/google_http.py`:** each thread gets its own `AuthorizedHttp`, and the
+  credentials object is shared.
+  - Reads pass `num_retries=2`, so 429s, 5xx responses and transient socket errors are retried.
+  - **Writes never auto-retry.** A 5xx on `batchUpdate` doesn't prove nothing was applied, and
+    `addSheet`, `appendDimension` and `addProtectedRange` aren't idempotent. The next run
+    re-plans instead.
+- **API errors:** Google HttpErrors and network failures map to 503 `google_unavailable`,
+  403 `sheet_forbidden` or 404 `sheet_not_found`, instead of a generic 500.
+  - `describe` falls back to the static readback (`live: false`) when the sheet can't be read.
+  - The preview offers a Retry button.
