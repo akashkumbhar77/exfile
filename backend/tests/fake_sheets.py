@@ -291,7 +291,17 @@ class FakeDriveService:
         self.modified: dict[str, datetime] = {}
         self.calls: list[str] = []
         self.unrelated_files: list[str] = []
-        sheets.on_commit = self._bump
+        # Live Drive reports the *previous* modifiedTime for a moment after a Sheets write returns;
+        # lag_reads_after_commit = how many files.get reads stay stale after each of our commits.
+        self.lag_reads_after_commit = 0
+        self._stale: dict[str, tuple[datetime, int]] = {}
+        sheets.on_commit = self._commit
+
+    def _commit(self, file_id: str) -> None:
+        prev = self.modified.get(file_id)
+        self._bump(file_id)
+        if self.lag_reads_after_commit and prev is not None:
+            self._stale[file_id] = (prev, self.lag_reads_after_commit)
 
     def _bump(self, file_id: str) -> None:
         t = self.clock()
@@ -339,5 +349,11 @@ class FakeDriveService:
         def run() -> dict[str, Any]:
             self.calls.append("files.get")
             t = self.modified.get(fileId, datetime(2026, 1, 1, tzinfo=UTC))
+            stale = self._stale.get(fileId)
+            if stale is not None:
+                t = stale[0]
+                self._stale[fileId] = (stale[0], stale[1] - 1)
+                if stale[1] <= 1:
+                    del self._stale[fileId]
             return {"modifiedTime": t.isoformat().replace("+00:00", "Z")}
         return _Request(run)

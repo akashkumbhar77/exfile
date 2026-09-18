@@ -116,6 +116,20 @@ def test_self_writes_are_suppressed_by_watermark(fleet: Fleet) -> None:
     assert sheet_row(fleet, SID_A).self_write_watermark is not None
 
 
+def test_self_write_suppressed_even_when_drive_modified_time_lags(fleet: Fleet) -> None:
+    """Live finding (2026-09-18): files.get right after batchUpdate still returned the previous
+    modifiedTime. The watermark must wait for Drive to catch up, not record the stale value."""
+    fleet.drive.lag_reads_after_commit = 3
+    organize(fleet, SID_A)
+    wm = sheet_row(fleet, SID_A).self_write_watermark
+    assert wm == fleet.drive.modified[SID_A]  # the time our write produced, not the user's edit
+    before = run_ids(fleet, SID_A)
+    for _ in range(3):
+        stats = fleet.tick(30)
+        assert stats.touched == []
+    assert run_ids(fleet, SID_A) == before  # no extra NOOP run from our own write
+
+
 def test_change_without_value_change_is_a_logged_noop(fleet: Fleet) -> None:
     organize(fleet, SID_A)
     writes = fleet.batch_writes(SID_A)

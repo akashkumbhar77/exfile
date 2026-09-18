@@ -9,7 +9,8 @@ Never files.list / search. Two requests per poll regardless of fleet size
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -68,6 +69,21 @@ class DriveChangesFeed:
             raise UnregisteredSource(f"file {file_id!r} is not in the registry; refusing to open it")
         resp = self._svc.files().get(fileId=file_id, fields="modifiedTime", supportsAllDrives=True).execute()
         return parse_rfc3339(resp["modifiedTime"])
+
+    def wait_modified_after(self, file_id: str, before: datetime, timeout_s: float = 20.0,
+                            interval_s: float = 1.0, sleep: Callable[[float], None] = time.sleep) -> datetime | None:
+        """Self-write watermark (A.3). Drive updates modifiedTime a moment *after* a Sheets
+        batchUpdate returns (observed live: stale on an immediate read). Poll until it moves past
+        the pre-write value; None if it did not within the bound."""
+        waited = 0.0
+        while True:
+            now = self.modified_time(file_id)
+            if now > before:
+                return now
+            if waited >= timeout_s:
+                return None
+            sleep(interval_s)
+            waited += interval_s
 
 
 def _parse(raw: list[dict[str, Any]]) -> Iterator[FileChange]:

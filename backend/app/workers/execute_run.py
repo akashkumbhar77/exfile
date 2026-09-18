@@ -14,6 +14,7 @@ import logging
 import time
 import traceback
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.models import Sheet
 from app.services.fingerprint import fingerprint, governed_tabs
@@ -121,8 +122,9 @@ def _execute(ctx: WorkerContext, sheet_id: int, trigger: str, force: bool) -> Jo
             single("NOOP", fp=fp)
             return finish("NOOP")
 
+        before_write = ctx.feed.modified_time(ref)
         result = commit_run(ctx.adapter, p, ctx.store)
-        watermark = ctx.feed.modified_time(ref)
+        watermark = self_write_watermark(ctx, ref, before_write, run_id)
         post_fp = fingerprint(p.result.workbook, tabs)
         with ctx.factory() as s, s.begin():
             sheet = s.get(Sheet, sheet_id)
@@ -146,3 +148,15 @@ def _execute(ctx: WorkerContext, sheet_id: int, trigger: str, force: bool) -> Jo
                   "".join(traceback.format_tb(exc.__traceback__)))
         single("ERROR", error=err)
         return finish("ERROR")
+
+
+def self_write_watermark(ctx: WorkerContext, ref: str, before_write: datetime, run_id: str) -> datetime:
+    """modifiedTime our write produced (PATCH-002 A.3). If Drive has not caught up within the bound,
+    fall back to the pre-write value: our change will then reach the watcher, and the fingerprint
+    gate turns it into a logged NOOP (safe, costs one read)."""
+    wm = ctx.feed.wait_modified_after(ref, before_write, sleep=ctx.sleep)
+    if wm is None:
+        log.warning("run.watermark_lagging run_id=%s sheet=%s: Drive modifiedTime did not advance; "
+                    "the self-write will be absorbed by the fingerprint gate", run_id, ref)
+        return before_write
+    return wm

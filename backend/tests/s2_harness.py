@@ -117,6 +117,7 @@ def make_fleet(url: str) -> Fleet:
         queue=queue,
         org_id=ORG,
         clock=clock,
+        sleep=lambda _s: None,
     )
     set_context(ctx)
     pk: dict[str, int] = {}
