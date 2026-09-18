@@ -1,6 +1,7 @@
 # Local dev stack: postgres, redis, migrations, fleet watcher, run worker.
-#   docker compose up -d postgres redis && docker compose run --rm migrate
-#   docker compose up -d watcher worker
+#   docker compose up -d                                  # postgres + redis only
+#   SA_KEY_PATH=/path/to/sa.json docker compose --profile tools run --rm migrate
+#   SA_KEY_PATH=/path/to/sa.json docker compose --profile app up -d   # watcher + worker
 # Secrets come from backend/.env; the service-account key is mounted read-only.
 services:
   postgres:
@@ -28,7 +29,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa.json
     volumes: &secrets
-      - ${SA_KEY_PATH:?set SA_KEY_PATH to the service-account JSON on the host}:/secrets/sa.json:ro
+      - ${SA_KEY_PATH:-./backend/var/sa.json}:/secrets/sa.json:ro
     depends_on:
       postgres: {condition: service_healthy}
     command: ["alembic", "upgrade", "head"]
@@ -44,6 +45,7 @@ services:
       redis: {condition: service_started}
     command: ["python", "cli.py", "watch"]
     restart: unless-stopped
+    profiles: ["app"]
 
   worker:
     build: ./backend
@@ -55,6 +57,7 @@ services:
       redis: {condition: service_started}
     command: ["python", "cli.py", "worker"]
     restart: unless-stopped
+    profiles: ["app"]
 
 volumes:
   pgdata:
