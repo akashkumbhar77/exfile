@@ -121,6 +121,26 @@ def test_owner_title_appears_in_readback() -> None:
     assert "Title banner: “Q3 ORDERS”." in text
 
 
+def test_numeric_conditions_have_a_plain_english_readback() -> None:
+    raw = load_reference_raw()
+    raw["canonical_headers"].extend([
+        {"canonical": "DAYS REQUIRED", "match": ["equals:DAYS REQUIRED"]},
+        {"canonical": "ACTUAL COST", "match": ["equals:ACTUAL COST"]},
+        {"canonical": "BUDGET", "match": ["equals:BUDGET"]},
+    ])
+    raw["rules"] = [{
+        "id": "long_tasks", "action": "format", "tabs": ["MACHINES"], "trigger": {"on_edit": {}},
+        "row_rules": [{
+            "when": {"numeric": {"left": {"subtract": [{"column": "ACTUAL COST"}, {"column": "BUDGET"}]},
+                         "op": "between", "right": {"min": {"literal": 5}, "max": {"literal": 20}}}},
+            "font": "#FF0000",
+        }],
+    }]
+    cfg = ConfigSpec.model_validate(raw)
+    detail = rule_text(cfg.rules[0], 1, Scope(cfg)).details[1].text
+    assert detail == "Where ACTUAL COST − BUDGET is between 5 and 20 (inclusive): red text."
+
+
 def test_frontend_readback_fixture_matches_the_describe_endpoint_payload() -> None:
     """The Approvals page's fixture is exactly what GET /configs/{id}/describe returns for the
     reference config, so UI work and tests can't drift from the API's readback."""

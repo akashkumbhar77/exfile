@@ -746,3 +746,34 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   row. It prints the failure to the owner's terminal only. The model prompt necessarily carries
   the instruction; that is the B.7 boundary, and prompts are not persisted (`llm_calls` holds
   counts only).
+
+## S7: Numeric conditions (2026-09-18)
+
+### A row-level numeric condition language, not helper columns or formulas
+- **What:** a `numeric` condition compares two numeric expressions with `eq`, `ne`, `gt`,
+  `gte`, `lt`, `lte`, `between` or `not_between` (the range ones are inclusive).
+  - An expression is a `literal`, a `column`, or one of `add`, `subtract`, `multiply`,
+    `divide`, `abs` and `round`.
+  - It works anywhere a condition already does: format row and cell rules, move/copy/clear
+    `when`, and inside `all`/`any`/`not`.
+- **Why this shape:** it is file-independent and deterministic. It evaluates one row at a time,
+  with no aggregates, lookups or arbitrary spreadsheet formulas, so it stays in the compiled
+  config (invariant 2) and never needs a helper column written to the sheet.
+- **Safe by default (invariant 9):** only real number cells match. Blanks, text that looks
+  like a number, errors, division by zero and non-finite results are non-matches.
+  - **Watch for:** `not` of a numeric condition therefore matches those rows. "Not over 20"
+    includes blank cells.
+- **`round` rounds half away from zero, like the sheet's ROUND.** Python's `round()` rounds
+  half to even on the binary float (2.5 → 2, and 2.675 → 2.67 to 2 places), which would
+  disagree with what the owner sees. `sheets_round` goes through the shortest decimal repr.
+- **Readback:** nested arithmetic is bracketed ("(HOURS + 2) × RATE"), and whole-number
+  literals print without ".0".
+- **Onboarding:** the `conditions-and-format` skill ships the full numeric schema. Before this,
+  `NumericCondition` referenced `NumericComparison`, which wasn't included, so the model never
+  saw the expression grammar. A test now pins the closure. Prompt versions were bumped to
+  `onboarding-v3.1` and `onboarding-v4.1-skills`, so configs record which prompt knew about
+  numerics. `docs/config.schema.json` was regenerated.
+- **Provenance:** the initial implementation (schema, evaluator, validator, readback, skill and
+  23 tests) arrived as uncommitted work on this branch. The review fixed a mypy-strict error,
+  the rounding semantics, readback bracketing and the incomplete skill schema, and added tests
+  for each. The rounding test was mutation-checked against Python's `round`.

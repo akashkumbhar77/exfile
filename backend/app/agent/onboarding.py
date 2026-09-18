@@ -44,8 +44,8 @@ from app.services.validator import validate_config
 log = logging.getLogger("app.agent")
 
 PROMPTS = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "onboarding-v3"
-SKILLS_PROMPT_VERSION = "onboarding-v4-skills"
+PROMPT_VERSION = "onboarding-v3.1"  # 3.1: numeric conditions
+SKILLS_PROMPT_VERSION = "onboarding-v4.1-skills"  # 4.1: numeric conditions skill
 DECLINE_PREFIX = "CANNOT:"
 
 
