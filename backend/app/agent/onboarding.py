@@ -36,7 +36,7 @@ from app.services.dry_run import DryRunReport
 from app.services.grid import cell_text
 from app.services.live import prepare_run
 from app.services.preflight import compute_schema_hash
-from app.services.registry import ensure_org, ensure_pending_sheet, propose_config, record_event
+from app.services.registry import ensure_org, ensure_pending_sheet, headers_of, propose_config, record_event
 from app.services.runner import RunEvent
 from app.services.validator import validate_config
 
@@ -206,7 +206,9 @@ class _Session:
                                                "really asks for these names, propose the same config again."}))
 
         with self.factory() as s, s.begin():
-            _, row = propose_config(s, self.org_id, config)
+            _, row = propose_config(s, self.org_id, config, governed_headers=headers_of(self.grid.workbook, config),
+                                    source={"kind": "onboarding", "session_id": self.session_id, "model": model,
+                                            "prompt_version": self.prompt_version})
             record_event(s, _sheet(s, self.sheet_pk), "onboarding.proposed", {
                 "session_id": self.session_id, "config_version": row.version, "model": model,
                 "prompt_version": self.prompt_version, "dry_run_status": report.status,

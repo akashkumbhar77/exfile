@@ -6,6 +6,7 @@ and events hold ids, statuses, counts, tab names, hashes and error summaries.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -78,7 +79,9 @@ def ensure_pending_sheet(s: Session, org_id: str, google_sheet_id: str, title: s
     return sheet
 
 
-def propose_config(s: Session, org_id: str, config: ConfigSpec, title: str = "") -> tuple[Sheet, Config]:
+def propose_config(s: Session, org_id: str, config: ConfigSpec, title: str = "",
+                   governed_headers: dict[str, list[str]] | None = None,
+                   source: dict[str, Any] | None = None) -> tuple[Sheet, Config]:
     """Step 1 of enrollment: the sheet enters the registry as PENDING (so B.9 allows reading it for the
     dry-run) with its config PENDING_APPROVAL. The watcher ignores it until approval."""
     ensure_org(s, org_id)
@@ -93,18 +96,28 @@ def propose_config(s: Session, org_id: str, config: ConfigSpec, title: str = "")
                or 0) + 1
     body = config.model_dump(mode="json", by_alias=True, exclude_none=True)
     body["config_version"] = version
-    row = Config(org_id=org_id, sheet_id=sheet.id, version=version, body=body, status="PENDING_APPROVAL")
+    row = Config(org_id=org_id, sheet_id=sheet.id, version=version, body=body, status="PENDING_APPROVAL",
+                 governed_headers=governed_headers, source=source or {"kind": "cli"})
     s.add(row)
     s.flush()
     record_event(s, sheet, "config.proposed", {"config_version": version})
     return sheet, row
 
 
-def approve_config(s: Session, config_id: int, approved_by: str) -> Sheet:
-    """Step 2 (invariant 11): explicit owner approval after the dry-run preview."""
+def approve_config(s: Session, config_id: int, approved_by: str, summary_title: str | None = None) -> Sheet:
+    """Step 2 (invariant 11): explicit owner approval after the dry-run preview.
+
+    `summary_title` (PATCH-003 decision (c)): the owner may title every consolidate target at
+    approval. It is written into the config body (presentation.title) and stored on the row;
+    the onboarding model never reads it."""
     row = s.get(Config, config_id)
     if row is None or row.status != "PENDING_APPROVAL":
         raise RegistryError("config is not pending approval")
+    title = (summary_title or "").strip()
+    if title:
+        body = apply_summary_title(row.body, title)
+        ConfigSpec.model_validate(body)  # still a valid config
+        row.body, row.summary_title = body, title
     sheet = s.get(Sheet, row.sheet_id)
     assert sheet is not None
     for old in s.scalars(select(Config).where(Config.sheet_id == sheet.id, Config.status == ACTIVE)):
@@ -117,13 +130,38 @@ def approve_config(s: Session, config_id: int, approved_by: str) -> Sheet:
     return sheet
 
 
-def reject_config(s: Session, config_id: int, rejected_by: str) -> None:
+def reject_config(s: Session, config_id: int, rejected_by: str, reason: str) -> None:
+    """Reject with a reason (required; shown in config history)."""
+    if not reason.strip():
+        raise RegistryError("a reason is required to reject a config")
     row = s.get(Config, config_id)
     if row is None or row.status != "PENDING_APPROVAL":
         raise RegistryError("config is not pending approval")
     row.status = "REJECTED"
+    row.rejected_by, row.rejected_at, row.decision_reason = rejected_by, datetime.now(UTC), reason.strip()[:1000]
     sheet = s.get(Sheet, row.sheet_id)
     record_event(s, sheet, "config.rejected", {"config_version": row.version, "rejected_by": rejected_by})
+
+
+def apply_summary_title(body: dict[str, Any], title: str) -> dict[str, Any]:
+    """Copy of a config body with `presentation.title` set on every consolidate rule."""
+    out: dict[str, Any] = json.loads(json.dumps(body))
+    for rule in out.get("rules", []):
+        if rule.get("action") == "consolidate":
+            rule.setdefault("presentation", {})["title"] = title[:200]
+    return out
+
+
+def headers_of(workbook: Any, config: ConfigSpec) -> dict[str, list[str]]:
+    """Header text of each governed tab (structure only) for the drift 'what changed' view."""
+    from app.services.grid import cell_text
+
+    out: dict[str, list[str]] = {}
+    for name in config.schema_hashes:
+        tab = workbook.tab(name)
+        if tab is not None:
+            out[name] = [cell_text(h).strip() for h in tab.row(config.header_row)]
+    return out
 
 
 def register_sheet(s: Session, org_id: str, config: ConfigSpec, approved_by: str, title: str = "") -> Sheet:

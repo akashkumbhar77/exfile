@@ -22,6 +22,7 @@ from app.adapters.base import StaticRegistry
 from app.adapters.sheets_adapter import SheetsAdapter
 from app.core.logging import configure
 from app.core.settings import Settings, get_settings
+from app.models import Config
 from app.schemas.config import ConfigSpec
 from app.services.live import PreparedRun, commit_run, prepare_run
 from app.services.registry import (
@@ -29,6 +30,7 @@ from app.services.registry import (
     RegistryError,
     active_config,
     approve_config,
+    headers_of,
     propose_config,
     reject_config,
     sheet_by_ref,
@@ -151,24 +153,26 @@ def cmd_register(args: argparse.Namespace) -> int:
     config = _load_config(Path(args.config))
     factory = _factory(settings)
     with factory() as s, s.begin():
-        _, row = propose_config(s, settings.org_id, config, title=args.title or "")
+        _, row = propose_config(s, settings.org_id, config, title=args.title or "", source={"kind": "cli"})
         config_pk, version = row.id, row.version
     adapter = SheetsAdapter.from_service_account(_key(settings), DbRegistry(factory))
     prepared = prepare_run(adapter, config.sheet_id, config, RunEvent("change"))
+    with factory() as s, s.begin():
+        s.get(Config, config_pk).governed_headers = headers_of(prepared.grid.workbook, config)  # type: ignore[union-attr]
     print_plan(prepared)
     if prepared.status != "OK":
         with factory() as s, s.begin():
-            reject_config(s, config_pk, "cli: dry-run not OK")
+            reject_config(s, config_pk, "cli", f"dry-run status {prepared.status}")
         print("config rejected: the dry-run did not pass (nothing activated, nothing written)")
         return 2
     prompt = f"Approve config v{version} for {config.sheet_id} and go live? [y/N] "
     approved = bool(args.yes) or input(prompt).strip().lower() == "y"
     with factory() as s, s.begin():
         if not approved:
-            reject_config(s, config_pk, args.approved_by)
+            reject_config(s, config_pk, args.approved_by, args.reject_reason or "rejected at the CLI prompt")
             print("rejected: the sheet stays PENDING and is not watched")
             return 1
-        approve_config(s, config_pk, args.approved_by)
+        approve_config(s, config_pk, args.approved_by, summary_title=args.summary_title)
     print(f"approved by {args.approved_by}: sheet is ACTIVE; the watcher organizes it on its next change "
           f"(or now: cli.py run --sheet-id {config.sheet_id})")
     return 0
@@ -209,15 +213,18 @@ def cmd_enroll(args: argparse.Namespace) -> int:
         print(f"  warning: {w}")
     if args.show_config:
         print(cfg.model_dump_json(indent=2, by_alias=True, exclude_none=True))
+    assert result.config_id is not None
+    if args.leave_pending:
+        print(f"left PENDING_APPROVAL (config id {result.config_id}): approve or reject it later")
+        return 0
     prompt = f"Approve config v{result.config_version} and go live? [y/N] "
     approved = bool(args.yes) or input(prompt).strip().lower() == "y"
-    assert result.config_id is not None
     with factory() as s, s.begin():
         if not approved:
-            reject_config(s, result.config_id, args.approved_by)
+            reject_config(s, result.config_id, args.approved_by, args.reject_reason or "rejected at the CLI prompt")
             print("rejected: nothing activated")
             return 1
-        approve_config(s, result.config_id, args.approved_by)
+        approve_config(s, result.config_id, args.approved_by, summary_title=args.summary_title)
     print(f"approved by {args.approved_by}: sheet is ACTIVE")
     return 0
 
@@ -314,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
     reg.add_argument("--approved-by", required=True, help="who approves (recorded on the config)")
     reg.add_argument("--title")
     reg.add_argument("--yes", action="store_true", help="approve without the interactive prompt")
+    reg.add_argument("--summary-title", help="title banner for consolidated tabs (owner-supplied)")
+    reg.add_argument("--reject-reason", help="reason recorded if you answer no")
     reg.set_defaults(func=cmd_register)
 
     enr = sub.add_parser("enroll", help="S3: compile a plain-English instruction into a config, dry-run, approve")
@@ -322,6 +331,9 @@ def main(argv: list[str] | None = None) -> int:
     enr.add_argument("--approved-by", required=True)
     enr.add_argument("--yes", action="store_true", help="approve without the interactive prompt")
     enr.add_argument("--show-config", action="store_true", help="print the proposed config JSON")
+    enr.add_argument("--leave-pending", action="store_true", help="stop after the proposal (approve later)")
+    enr.add_argument("--summary-title", help="title banner for consolidated tabs (owner-supplied)")
+    enr.add_argument("--reject-reason", help="reason recorded if you answer no")
     enr.set_defaults(func=cmd_enroll)
 
     sub.add_parser("watch", help="run the fleet watcher (Drive changes feed)").set_defaults(func=cmd_watch)

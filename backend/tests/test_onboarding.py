@@ -337,3 +337,44 @@ def test_renaming_an_existing_summary_is_reviewed_once(env: Any) -> None:
     result = run(env, llm)
     assert result.status == "PENDING_APPROVAL" and len(result.failures) == 1
     assert '"stage": "review"' in result.failures[0] and "FREEZE?" in result.failures[0]
+
+
+def test_reject_needs_a_reason_and_keeps_it(env: Any) -> None:
+    from app.services.registry import RegistryError, reject_config
+
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": compiled_reference()})]})
+    run(env, llm)
+    factory, _ = env
+    cid = configs(factory)[0].id
+    with pytest.raises(RegistryError, match="reason"):
+        with factory() as s, s.begin():
+            reject_config(s, cid, "owner@test", "   ")
+    with factory() as s, s.begin():
+        reject_config(s, cid, "owner@test", "benchmark artifact")
+    [row] = configs(factory)
+    assert (row.status, row.decision_reason, row.rejected_by) == ("REJECTED", "benchmark artifact", "owner@test")
+    assert row.governed_headers and "MACHINES" in row.governed_headers  # structure snapshot stored
+    assert row.source and row.source["kind"] == "onboarding"
+
+
+def test_owner_supplied_summary_title_is_applied_at_approval(env: Any) -> None:
+    """PATCH-003 decision (c): the title is given by the owner at approval, never read by the model."""
+    raw = compiled_reference()
+    for rule in raw["rules"]:
+        if rule["action"] == "consolidate":
+            rule.get("presentation", {}).pop("title", None)
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": raw})]})
+    run(env, llm)
+    factory, adapter = env
+    cid = configs(factory)[0].id
+    with factory() as s, s.begin():
+        approve_config(s, cid, "owner@test", summary_title="ORDER SUMMARY — ALL TABS")
+    [row] = configs(factory)
+    assert row.summary_title == "ORDER SUMMARY — ALL TABS"
+    cfg = ConfigSpec.model_validate(row.body)
+    [cons] = [r for r in cfg.rules if r.action == "consolidate"]
+    assert cons.presentation.title == "ORDER SUMMARY — ALL TABS"  # type: ignore[union-attr]
+    out = dry_run(cfg, adapter.read_grid(SID).workbook, EvalContext("x", reference_workbook.TODAY))
+    assert out.status == "OK"
+    # the model never saw a title: nothing sent to it mentions one
+    assert "ALL TABS" not in json.dumps([m for _, msgs in llm.sent for m in msgs])

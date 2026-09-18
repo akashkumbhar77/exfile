@@ -538,3 +538,37 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   rename an existing summary tab's columns is sent back once, listing the lost and new
   columns. Proposing the same headers again is accepted, so an intended rename still works.
   This catches silent renames without blocking deliberate ones.
+
+### Model decision (owner, logged 2026-09-18)
+| role | model | why |
+|---|---|---|
+| primary (`LLM_PRIMARY_MODEL`) | **gpt-5-mini** | Live on the real workbook, with answer-free prompts and skills: 6 of 6 runs proposed a valid config, and 3 of 3 with the rename review matched the hand-written config. `gpt-4.1-mini` → `gpt-4.1` produced a usable config in 1 of 7 runs. |
+| escalation (`LLM_ESCALATION_MODEL`) | **gpt-5.1** | Stronger model from the same family. It's only used after 2 failed proposals on the primary, which didn't happen in the final runs. |
+| provider | OpenAI | Owner override of CLAUDE.md's Anthropic lock (see "S3 → Provider"). |
+- Skills stay on (`LLM_USE_SKILLS=true`): about 18k input tokens per run versus about 48.5k with
+  the full prompt, and 0 failed attempts.
+- To change the models, edit `.env`. `enroll` checks the models against the account's model
+  list before its first call.
+
+### S3 close-out (2026-09-18)
+- **Title, decision (c) as defined in PATCH-003 B1:** the owner supplies the title for
+  consolidated tabs at approval (`approve_config(summary_title=…)`, `--summary-title`, and
+  later the Approvals page).
+  - It's written into each consolidate rule's `presentation.title` and stored on
+    `configs.summary_title`.
+  - The onboarding model never reads it. This differs from an earlier proposal in this log to
+    have the engine keep the existing title; PATCH-003 is the governing spec.
+- **Every config now records:**
+  - `decision_reason`, `rejected_by` and `rejected_at`. A reason is required to reject.
+  - `governed_headers`, a header-text snapshot (structure only) used for the drift
+    "what changed" view.
+  - `source`: onboarding session, model and prompt version, or `cli`.
+
+  Added by migration 0003.
+- **Configs v2–v19 on sheet 2 were rejected** with the reason "benchmark artifact: S3 live
+  model/prompt trials".
+- **Final enrolment of sheet 2** through `cli.py enroll --leave-pending`: config v20 (id 21),
+  gpt-5-mini, first attempt, left PENDING_APPROVAL for the Approvals page.
+  - Proposed as is, it differs from the hand-written config only in the SUMMARY banner.
+  - With the owner title applied, it's identical on every tab and makes 0 changes to the
+    live sheet.

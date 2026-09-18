@@ -75,6 +75,15 @@ class Config(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     approved_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # required on reject
+    # PATCH-003 decision (c): owner-supplied SUMMARY title, set at approval, never model-read
+    summary_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # header text of each governed tab when proposed (structure only): drift "what changed" view
+    governed_headers: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # {"kind": "onboarding", "session_id", "model", "prompt_version"} | {"kind": "cli"}
+    source: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = _now()
 
 

@@ -64,16 +64,8 @@ separate decision for the owner.
 The owner chose OpenAI (see DECISIONS "S3" and the CLAUDE.md override note). The agent is
 built and tested with a scripted LLM.
 
-## S3 exit criteria on the real workbook (2026-09-18)
-- [x] **A nonsense instruction ends in a human-readable failure and never an ACTIVE config**
-  (session onb_b24503822f18).
-- [~] **Plain English → same behaviour as the hand-written config.**
-  - With the defaults (`gpt-5-mini`, skills, rename review), 3 of 3 runs match exactly on
-    every tab's values, headers and colours (configs v17–v19 on sheet 2, PENDING_APPROVAL).
-  - The only difference is the SUMMARY title banner, which can't be inferred under B.7.
-
-Owner decisions needed:
-1. **SUMMARY title:** (a) accept no banner, (b) let tab titles reach the model, or (c) the
-   engine keeps an existing target's title when a config sets none. Recommended: (c).
-2. **Trial configs v2–v19 on sheet 2** (all PENDING_APPROVAL, none live): reject them all, or
-   approve one (v19 is a good candidate once the title question is settled).
+## S3 exit criteria on the real workbook: PASSED (2026-09-18)
+- [x] **A nonsense instruction ends in a human-readable failure and never an ACTIVE config.**
+- [x] **Plain English gives the same behaviour as the hand-written config.** Config v20
+  (id 21) matches on every tab once the owner title (PATCH-003 decision (c)) is applied. It's
+  left PENDING_APPROVAL, to be approved end to end from the Approvals page (PATCH-003 B1 exit).
