@@ -58,8 +58,8 @@ def poll_once(ctx: WorkerContext) -> PollStats:
                 continue  # not ours, or not ACTIVE (paused sheets wait for `resume`)
             stats.matched += 1
             wm = sheet.self_write_watermark
-            if wm is not None and c.modified_time is not None and c.modified_time <= wm:
-                suppressed[sheet.id] += 1  # A.3: our own write; never trigger ourselves
+            if c.by_self or (wm is not None and c.modified_time is not None and c.modified_time <= wm):
+                suppressed[sheet.id] += 1  # A.3: our own write (by author or watermark); never re-trigger
                 continue
             per_sheet[sheet.id] += 1
             ctx.debouncer.touch(sheet.id, now)

@@ -5,7 +5,6 @@ Tests install their own context (fakes) with `set_context`.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -33,7 +32,6 @@ class WorkerContext:
     queue: RunQueue
     org_id: str
     clock: Callable[[], datetime] = field(default=utcnow)
-    sleep: Callable[[float], None] = field(default=time.sleep)
 
 
 _override: WorkerContext | None = None

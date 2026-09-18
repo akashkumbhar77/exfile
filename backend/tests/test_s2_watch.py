@@ -116,18 +116,30 @@ def test_self_writes_are_suppressed_by_watermark(fleet: Fleet) -> None:
     assert sheet_row(fleet, SID_A).self_write_watermark is not None
 
 
-def test_self_write_suppressed_even_when_drive_modified_time_lags(fleet: Fleet) -> None:
-    """Live finding (2026-09-18): files.get right after batchUpdate still returned the previous
-    modifiedTime. The watermark must wait for Drive to catch up, not record the stale value."""
-    fleet.drive.lag_reads_after_commit = 3
+def test_self_write_suppressed_by_author_when_drive_modified_time_lags(fleet: Fleet) -> None:
+    """Live finding (2026-09-18): files.get after batchUpdate returns the previous modifiedTime for
+    minutes, and Drive re-emits the change record later. Our writes are recognized by author
+    (lastModifyingUser.me), so neither record triggers a run."""
+    fleet.drive.lag_reads_after_commit = 50
     organize(fleet, SID_A)
-    wm = sheet_row(fleet, SID_A).self_write_watermark
-    assert wm == fleet.drive.modified[SID_A]  # the time our write produced, not the user's edit
     before = run_ids(fleet, SID_A)
-    for _ in range(3):
+    fleet.drive.repeat_last_change(SID_A)
+    suppressed = 0
+    for _ in range(4):
         stats = fleet.tick(30)
+        suppressed += stats.suppressed
         assert stats.touched == []
-    assert run_ids(fleet, SID_A) == before  # no extra NOOP run from our own write
+    assert suppressed >= 2 and run_ids(fleet, SID_A) == before  # no NOOP run from our own write
+
+
+def test_human_edit_after_our_write_still_triggers(fleet: Fleet) -> None:
+    fleet.drive.lag_reads_after_commit = 50  # watermark stays stale: must not swallow the human edit
+    organize(fleet, SID_A)
+    before = run_ids(fleet, SID_A)
+    fleet.drive.user_edit(SID_A, MACHINES, FIRST_DATA_ROW, STATUS_COL, "Cancelled")
+    fleet.tick(30)
+    fleet.tick(30)
+    assert len(run_ids(fleet, SID_A) - before) == 1
 
 
 def test_change_without_value_change_is_a_logged_noop(fleet: Fleet) -> None:

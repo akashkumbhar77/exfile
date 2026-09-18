@@ -2,6 +2,8 @@
 
   * changes.getStartPageToken / changes.list -- the fleet feed
   * files.get(fields=modifiedTime) on a *registered* file -- self-write watermark (A.3)
+  * lastModifyingUser.me on each change -- recognizes our own writes by author, because live
+    Drive reports a write's modifiedTime only minutes later (DECISIONS: S2 live findings)
 
 Never files.list / search. Two requests per poll regardless of fleet size
 (one list page per poll in steady state).
@@ -9,8 +11,7 @@ Never files.list / search. Two requests per poll regardless of fleet size
 
 from __future__ import annotations
 
-import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -18,7 +19,10 @@ from typing import Any
 from app.adapters.base import SourceRegistry, UnregisteredSource
 
 DRIVE_SCOPES = ("https://www.googleapis.com/auth/drive.metadata.readonly",)
-_CHANGE_FIELDS = "nextPageToken,newStartPageToken,changes(fileId,removed,time,file(modifiedTime))"
+_CHANGE_FIELDS = (
+    "nextPageToken,newStartPageToken,"
+    "changes(fileId,removed,time,file(modifiedTime,lastModifyingUser(me)))"
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,7 @@ class FileChange:
     time: datetime  # when the change was recorded
     modified_time: datetime | None  # file modifiedTime at that change, if known
     removed: bool = False
+    by_self: bool = False  # lastModifyingUser.me: the service account itself made this change
 
 
 def parse_rfc3339(s: str) -> datetime:
@@ -70,30 +75,17 @@ class DriveChangesFeed:
         resp = self._svc.files().get(fileId=file_id, fields="modifiedTime", supportsAllDrives=True).execute()
         return parse_rfc3339(resp["modifiedTime"])
 
-    def wait_modified_after(self, file_id: str, before: datetime, timeout_s: float = 20.0,
-                            interval_s: float = 1.0, sleep: Callable[[float], None] = time.sleep) -> datetime | None:
-        """Self-write watermark (A.3). Drive updates modifiedTime a moment *after* a Sheets
-        batchUpdate returns (observed live: stale on an immediate read). Poll until it moves past
-        the pre-write value; None if it did not within the bound."""
-        waited = 0.0
-        while True:
-            now = self.modified_time(file_id)
-            if now > before:
-                return now
-            if waited >= timeout_s:
-                return None
-            sleep(interval_s)
-            waited += interval_s
-
 
 def _parse(raw: list[dict[str, Any]]) -> Iterator[FileChange]:
     for c in raw:
         if "fileId" not in c:
             continue  # shared-drive level changes carry no file
-        mt = c.get("file", {}).get("modifiedTime")
+        f = c.get("file", {})
+        mt = f.get("modifiedTime")
         yield FileChange(
             file_id=str(c["fileId"]),
             time=parse_rfc3339(c["time"]),
             modified_time=parse_rfc3339(mt) if mt else None,
             removed=bool(c.get("removed", False)),
+            by_self=bool(f.get("lastModifyingUser", {}).get("me", False)),
         )

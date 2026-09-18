@@ -395,3 +395,23 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   real RQ jobs, and fake Sheets/Drive services that bump `modifiedTime` on every commit.
 - **`docker-compose.yml`** runs postgres, redis, migrate, watcher and worker. The backend
   image never contains `.env` or keys (`.dockerignore`); the key is mounted read-only.
+
+### S2 live findings (2026-09-18, real workbook, two sheets watched)
+- **The changes feed does see sheets shared with the service account.** One user edit
+  appeared in the next poll and produced exactly one run; the other sheet was untouched.
+- **PATCH-002 A.3's watermark doesn't work as written.** An immediate `files.get(modifiedTime)`
+  after a Sheets `batchUpdate` returns the *previous* time. Drive only reports our write's
+  time (which does equal the write moment) several minutes later. Waiting 20s didn't help.
+  - Drive also **re-emits** the change record for the same write a few minutes after the
+    first. Before this fix, one write caused two harmless NOOP runs.
+- **Resolution: recognize our own writes by author, with the watermark as a second layer.**
+  - The feed request includes `file.lastModifyingUser.me`, and the watcher drops changes
+    made by the service account itself. No email address is stored or logged.
+  - This is safe both ways:
+    - A human edit after our write makes the human the last modifier, so it triggers a run.
+    - A human edit during a run is caught by the stale check before the write.
+  - The `modifiedTime` watermark (an immediate get, as A.3 specifies) still applies.
+  - The fingerprint gate stays the last line of defence: a self-write that slips through
+    becomes a logged NOOP with no writes.
+  - This departs from A.3's literal mechanism but keeps its intent ("guards the
+    bot-triggers-bot loop … just as actor-filtering did for webhooks"). **Owner to confirm.**

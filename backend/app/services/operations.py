@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -45,7 +43,7 @@ class UndoResult:
 
 
 def undo_run(factory: sessionmaker[Session], adapter: Adapter, feed: DriveChangesFeed, store: SnapshotStore,
-             run_id: str, force: bool = False, sleep: Callable[[float], None] = time.sleep) -> UndoResult:
+             run_id: str, force: bool = False) -> UndoResult:
     """Restore the tabs a run touched to their exact pre-run state (values, formats, validations).
 
     Refuses (unless force) if those tabs changed after the run: undo would also erase later edits.
@@ -75,9 +73,8 @@ def undo_run(factory: sessionmaker[Session], adapter: Adapter, feed: DriveChange
     if ops:
         before = [take_snapshot(undo_id, "undo", t, current.workbook.tab(t)) for t in touched]
         store.save(undo_id, sheet_ref, before)
-        before_write = feed.modified_time(sheet_ref)
         adapter.write_ops(sheet_ref, ops)
-        watermark = feed.wait_modified_after(sheet_ref, before_write, sleep=sleep) or before_write
+        watermark = feed.modified_time(sheet_ref)  # the watcher also recognizes our change by author
     tabs_fp = governed_tabs(config)
     with factory() as s, s.begin():
         row = s.get(Sheet, sheet_pk)

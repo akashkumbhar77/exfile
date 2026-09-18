@@ -299,18 +299,24 @@ class FakeDriveService:
 
     def _commit(self, file_id: str) -> None:
         prev = self.modified.get(file_id)
-        self._bump(file_id)
+        self._bump(file_id, by_self=True)
         if self.lag_reads_after_commit and prev is not None:
             self._stale[file_id] = (prev, self.lag_reads_after_commit)
 
-    def _bump(self, file_id: str) -> None:
+    def _bump(self, file_id: str, by_self: bool = False) -> None:
         t = self.clock()
         prev = self.modified.get(file_id)
         if prev is not None and t <= prev:
             t = prev + timedelta(milliseconds=1)
         self.modified[file_id] = t
         stamp = t.isoformat().replace("+00:00", "Z")
-        self.log.append({"fileId": file_id, "time": stamp, "file": {"modifiedTime": stamp}})
+        self.log.append({"fileId": file_id, "time": stamp,
+                         "file": {"modifiedTime": stamp, "lastModifyingUser": {"me": by_self}}})
+
+    def repeat_last_change(self, file_id: str) -> None:
+        """Live Drive re-emits a change record for the same modification minutes later."""
+        last = next(c for c in reversed(self.log) if c["fileId"] == file_id)
+        self.log.append(copy.deepcopy(last))
 
     def user_edit(self, file_id: str, tab: str, row: int, col: int, value: Any) -> None:
         """A human edits one cell (1-based) in the sheet UI."""
