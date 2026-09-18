@@ -30,7 +30,7 @@ from app.services.rules import RulePlan, apply_plan, evaluate_rule
 from app.services.rules.base import config_targets
 from app.services.rules.tabs import resolve_tabs
 
-EventKind = Literal["edit", "debounced", "schedule", "manual"]
+EventKind = Literal["edit", "debounced", "schedule", "manual", "change"]
 RunStatus = Literal["OK", "PAUSED_DRIFT", "BLOCKED", "ERROR"]
 
 
@@ -94,7 +94,15 @@ def select_rules(
             # consolidate always rebuilds from every source; other rules touch only the edited tab
             roots.append((r, None if isinstance(r, ConsolidateRule) else [tab.name]))
     else:
-        wanted_kind = {"debounced": DebouncedTrigger, "schedule": ScheduleTrigger}.get(event.kind)
+        # "change": the fleet watcher saw the file change but not which cells (Drive changes feed),
+        # so every edit-driven rule (on_edit + debounced) runs over all its tabs; the diff keeps
+        # writes minimal and a re-run over an organized sheet emits nothing.
+        kinds: dict[str, tuple[type, ...]] = {
+            "debounced": (DebouncedTrigger,),
+            "schedule": (ScheduleTrigger,),
+            "change": (OnEditTrigger, DebouncedTrigger),
+        }
+        wanted_kind = kinds.get(event.kind)
         for r in config.rules:
             if isinstance(r.trigger, AfterTrigger):
                 continue
