@@ -4,17 +4,37 @@
 PATCH-001 has been added. S1–S3 replace M2–M4, and M1 stands as done. S1 is built (see
 DECISIONS.md, "S1").
 
-## OPEN: S1 exit criteria need a human with Google access
-There are no GCP credentials in this environment. All three S1 exit criteria pass against
-the in-memory Sheets fake (`backend/tests/test_sheets_live.py`), but they haven't been run
-on the real converted workbook. Operator steps are in `backend/README.md`. S2 can't start
-until these pass on the real sheet.
+## S1 exit criteria on the real workbook (2026-09-18)
+- [x] **The dry-run prints a per-tab summary and writes nothing.** The run ended with
+  "dry-run: nothing written", and a failed live attempt proved atomicity: nothing was
+  applied.
+- [x] **The live run applied only the expected changes.** Run `run_20260918T055618_7b7bb040`
+  made 2 requests and recoloured 340 cells (the overdue tint on MACHINES rows 32–41 and
+  the matching SUMMARY rows).
+- [x] **The second run was a no-op**, which also confirms that clearing a colour through
+  `*ColorStyle` works on real Sheets.
+- [ ] **Owner comparison against the legacy xlsx export.** This is still to do. S2 starts
+  once it's done.
 
-Things the fake can't prove, so check them on the first real run:
-- Clearing a fill or font colour through `backgroundColorStyle` / `foregroundColorStyle` in
-  the field mask also clears the legacy `backgroundColor` / `foregroundColor`.
-- The second run reports `0 ops`. If it doesn't, the likeliest cause is a colour or number
-  round-trip difference.
+Operational notes:
+- The service account has to be an editor on SUMMARY's whole-sheet protection
+  ("Auto-generated consolidated summary — locked"), not just on the file.
+- The sheet's time zone is set to Asia/Calcutta (IST).
+
+## OPEN: S2 live exit criteria need Postgres and Redis on a machine you control
+S2 is built, and the exit criteria pass in tests (backend/tests/test_s2_watch.py: real
+Postgres, fake Redis with real RQ jobs, two sheets watched at once). The live criteria on
+the real workbook still need a running Postgres and Redis. This machine has neither, and
+no Docker or WSL. Options:
+- (a) install Docker Desktop and use `docker-compose.yml`, or
+- (b) run a native Redis (e.g. Memurai) with the embedded Postgres.
+
+The live criteria also need a **second enrolled sheet**, because PATCH-002 A.5 requires the
+tests to run with at least two sheets watched.
+
+Must be verified live (a fake can't prove these):
+- Files shared with the service account appear in its Drive changes feed.
+- How far `modifiedTime` lags behind our own write.
 
 ## PARTLY RESOLVED: consolidate `presentation`
 Title and header colours are now applied by the evaluator. What follows is the remaining question.

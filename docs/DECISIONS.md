@@ -311,3 +311,87 @@ Minimal shapes for actions the SPEC names but doesn't specify:
 - **Governed tabs.** In the real workbook they are MACHINES, UNITS, RFB  MOD, SPARES and
   BOUGHT-OUT. The owner approved their header hashes in the working config
   (`backend/var/s1_config.json`, gitignored). SUMMARY is rebuilt from all five.
+
+## S2: React to edits and undo (SPEC-PATCH-001 S2, SPEC-PATCH-002 A plus B.6/B.8/B.9)
+
+### Registry and schema
+- **Tables:** migration `0001` creates orgs, sheets, configs, runs, snapshots, events,
+  watch_state, and flags (schema only).
+  - Every table has `org_id`. On `orgs` it equals `id`, so every table can be scoped the
+    same way.
+  - The `profiles` table waits for S3.
+  - The sheets→configs foreign key cycle is added after both tables exist. The migration
+    was tested for upgrade, downgrade, re-upgrade and a clean `alembic check` on Postgres 16.
+- **Status values:**
+  - Sheet: PENDING, ACTIVE, PAUSED_DRIFT or PAUSED.
+  - Config: PENDING_APPROVAL, ACTIVE, SUPERSEDED or REJECTED.
+- **Enrollment is two steps (B.9 vs. invariant 11).** A dry-run has to read the sheet, but
+  B.9 forbids opening unregistered files. So `register` adds the sheet as **PENDING**, runs
+  the dry-run, then asks the owner to approve. Only ACTIVE sheets are watched or run.
+- **`runs` rows:** one per rule for real runs (from the executor). A single rule-less row
+  covers NOOP, STALE, ERROR, PAUSED_DRIFT and undo.
+  - An OK run whose diff is empty is logged as one NOOP row with `rows_affected=0`
+    (PATCH-002 A.2), not as per-rule rows with evaluation counts.
+
+### Detection and debounce
+- **One feed for the fleet.** `changes.list` over the service account's corpus, with
+  `includeItemsFromAllDrives`. The page token is persisted in the same transaction as the
+  debounce touches, so delivery is at-least-once and never lost. The first poll only stores
+  the start token.
+- **Debounce is a Redis sorted set of due times.**
+  - `touch` re-arms a sheet by setting its due time to now + 30s.
+  - Once per poll, touches happen *before* the dispatch step, so a burst that spans a poll
+    boundary still re-arms instead of dispatching early.
+  - Only the watcher touches and dispatches, which avoids races. RQ executes the jobs.
+  - RQ's own scheduler isn't used, which keeps Windows (SimpleWorker, no fork) supported.
+- **A `change` run event runs every edit-driven rule** (on_edit and debounced) over all its
+  tabs. The Drive feed says a file changed, not which cells, and the diff keeps the writes
+  minimal.
+- **Fingerprint gate (A.2).** Each governed tab (including consolidate targets) gets a
+  SHA-256 hash of its values, stored as `sheets.last_fingerprint`.
+  - The hash records what the sheet stores: text, number or boolean, with dates as serial
+    numbers. So date-formatted numbers and `1` vs `1.0` don't cause spurious re-runs.
+  - After a committed run, the stored fingerprint is that of the *projected* post-run state.
+- **Self-write suppression (A.3).** After each write, `files.get(modifiedTime)` on the
+  registered file becomes `self_write_watermark`, and the watcher drops changes at or
+  before it.
+  - Known gap: an edit made within about a second after our write can be swallowed until
+    the user's next edit. Changes *after* the watermark always trigger.
+- **Per-sheet Redis lock** (`lock:run:{id}`). A job that finds a run in progress re-arms
+  the debounce instead of running twice. A STALE run (the user edited mid-run) also
+  re-arms.
+
+### Undo, resume, purge
+- **Undo** restores snapshots newest-first with the shared diff and write path.
+  - It refuses if the run's tabs changed after it, judged by the `post_fingerprint` stored
+    in the `run.committed` event. `--force` overrides.
+  - The undo takes its own snapshot first, so it can be undone too.
+  - The sheet's status is unchanged: the next human edit re-applies the rules. Pausing is a
+    separate decision for the owner (a `pause` command isn't built; SPEC mentions it for the
+    dashboard).
+- **Resume** re-checks the live headers against the approved config. It refuses while the
+  sheet is still drifted; on success it sets ACTIVE and schedules an immediate run.
+- **Snapshot purge (B.8).**
+  - The watcher runs it once every 24h; `cli.py purge-snapshots` runs it now.
+  - Bodies are set to NULL and the rows stay, so undo reports "older than the N-day
+    retention".
+  - Retention is `orgs.snapshot_retention_days`, 30 by default.
+- **Where snapshots live:** registered sheets use the Postgres `DbSnapshotStore`. The S1
+  file-config path (`run --config`) keeps the local encrypted store.
+
+### Privacy
+- **B.6 error text:** `safe_error` persists our own error messages. For Google HttpErrors it
+  keeps the type and status with quoted fragments stripped (Google can echo rejected
+  input); anything else keeps only the type name.
+  - Worker logs record traceback frames but not the exception message.
+  - A test scans every runs and events row for cell values.
+- **B.9:**
+  - The adapter and the Drive `files.get` both check `DbRegistry` before any call.
+  - Drive scope is `drive.metadata.readonly`.
+  - An AST test forbids `files().list` and `q=` searches anywhere in `app/`.
+
+### Infrastructure
+- **Tests use an embedded Postgres 16** (`pgserver`, migrated by Alembic), fakeredis with
+  real RQ jobs, and fake Sheets/Drive services that bump `modifiedTime` on every commit.
+- **`docker-compose.yml`** runs postgres, redis, migrate, watcher and worker. The backend
+  image never contains `.env` or keys (`.dockerignore`); the key is mounted read-only.
