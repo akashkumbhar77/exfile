@@ -17,7 +17,7 @@ DUE_KEY = "debounce:due"
 
 
 class RunQueue(Protocol):
-    def enqueue_run(self, sheet_id: int) -> None: ...
+    def enqueue_run(self, sheet_id: int, trigger: str = "change") -> str | None: ...
 
 
 class Debouncer:
@@ -53,8 +53,9 @@ class RqRunQueue:
 
         self.queue = Queue(name, connection=redis)
 
-    def enqueue_run(self, sheet_id: int) -> None:
-        self.queue.enqueue(
-            "app.workers.execute_run.run_sheet_job", sheet_id,
+    def enqueue_run(self, sheet_id: int, trigger: str = "change") -> str | None:
+        job = self.queue.enqueue(
+            "app.workers.execute_run.run_sheet_job", sheet_id, trigger,
             description=f"run:{sheet_id}", job_timeout=600, result_ttl=3600, failure_ttl=86400,
         )
+        return str(job.id)

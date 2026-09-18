@@ -175,10 +175,12 @@ def record_event(s: Session, sheet: Sheet | None, kind: str, payload: dict[str, 
     s.add(Event(org_id=org_id, sheet_id=sheet.id if sheet else None, kind=kind, payload=payload))
 
 
-def record_runs(s: Session, sheet: Sheet, records: list[RunRecord]) -> None:
+def record_runs(s: Session, sheet: Sheet, records: list[RunRecord], trigger: str | None = None) -> None:
+    """`trigger` is what started the job (change / approval / manual); it overrides the engine's
+    event kind, which is always "change" for a whole-sheet run."""
     for r in records:
         s.add(Run(org_id=sheet.org_id, sheet_id=sheet.id, run_id=r.run_id, config_version=r.config_version,
-                  rule_id=r.rule_id, trigger_type=r.trigger_type, rows_affected=r.rows_affected,
+                  rule_id=r.rule_id, trigger_type=trigger or r.trigger_type, rows_affected=r.rows_affected,
                   duration_ms=r.duration_ms, status=r.status, error=r.error))
 
 

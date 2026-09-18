@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -13,10 +14,18 @@ from app.api.errors import ApiError
 from app.models import Config, Sheet
 from app.schemas.config import ConfigSpec
 from app.services.preview import compute_preview
-from app.services.registry import RegistryError, apply_summary_title, approve_config, reject_config
-from app.services.views import config_json, describe_json
+from app.services.registry import (
+    RegistryError,
+    apply_summary_title,
+    approve_config,
+    record_event,
+    reject_config,
+    safe_error,
+)
+from app.services.views import config_json, describe_json, first_run
 
 router = APIRouter(prefix="/configs", tags=["configs"], dependencies=[Auth])
+log = logging.getLogger("app.api")
 
 
 class ApproveBody(BaseModel):
@@ -57,7 +66,9 @@ def list_configs(ctx: Ctx, status: str | None = None, sheet_id: int | None = Non
 @router.get("/{config_id}")
 def get_config(ctx: Ctx, config_id: int) -> dict[str, Any]:
     row, sheet = _load(ctx, config_id)
-    return {**config_json(row, include_body=True), "sheet": _sheet_ref(sheet)}
+    with ctx.factory() as s:
+        run = first_run(s, row)
+    return {**config_json(row, include_body=True), "sheet": _sheet_ref(sheet), "first_run": run}
 
 
 @router.get("/{config_id}/describe")
@@ -88,13 +99,32 @@ def dry_run_preview(ctx: Ctx, config_id: int, summary_title: str | None = None,
 
 @router.post("/{config_id}/approve")
 def approve(ctx: Ctx, config_id: int, body: ApproveBody) -> dict[str, Any]:
+    """Owner approval from the Approvals page, where the dry-run preview is shown above the button.
+    The preview is the consent, so approval queues exactly one run to apply it (DECISIONS "Approval
+    queues the first run"). `approve_config` itself never runs anything: a path that activates a
+    config without a shown preview gets no automatic write."""
     _load(ctx, config_id)
     try:
         with ctx.factory() as s, s.begin():
-            approve_config(s, config_id, body.actor.strip(), summary_title=body.summary_title)
+            sheet = approve_config(s, config_id, body.actor.strip(), summary_title=body.summary_title)
+            sheet_pk, version = sheet.id, s.get(Config, config_id).version  # type: ignore[union-attr]
     except RegistryError as exc:
         raise ApiError(409, str(exc)) from exc
+    queue_first_run(ctx, sheet_pk, version)
     return get_config(ctx, config_id)
+
+
+def queue_first_run(ctx: Ctx, sheet_pk: int, version: int) -> None:
+    """Best effort: the approval is already committed. If the queue is down the sheet is still
+    ACTIVE and the watcher applies the config on the next edit; the page then shows no first run."""
+    try:
+        job_id = ctx.queue.enqueue_run(sheet_pk, trigger="approval")
+    except Exception as exc:  # logged (B.6-safe), never raised: approval must not fail after commit
+        log.warning("approve.first_run_not_queued sheet_pk=%d version=%d %s", sheet_pk, version, safe_error(exc))
+        return
+    with ctx.factory() as s, s.begin():
+        record_event(s, s.get(Sheet, sheet_pk), "run.queued",
+                     {"trigger": "approval", "config_version": version, "job_id": job_id})
 
 
 @router.post("/{config_id}/reject")

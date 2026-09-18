@@ -1,7 +1,8 @@
-// App shell. PATCH-003 A.1 build order: Approvals first; later pages are added as they're built.
+// App shell. PATCH-003 A.1 build order: Approvals, then Enroll; later pages are added as they're built.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ApprovalsPage } from "./pages/approvals/ApprovalsPage";
+import { EnrollPage } from "./pages/enroll/EnrollPage";
 import { SessionGate, useSession } from "./session";
 import styles from "./App.module.css";
 
@@ -18,6 +19,9 @@ function Shell() {
         <NavLink to="/approvals" className={({ isActive }) => (isActive ? `${styles.link} ${styles.on}` : styles.link)}>
           Approvals
         </NavLink>
+        <NavLink to="/enroll" className={({ isActive }) => (isActive ? `${styles.link} ${styles.on}` : styles.link)}>
+          Enroll
+        </NavLink>
         <span className={styles.spacer} />
         <span className={styles.who}>{actor}</span>
         <button type="button" className={styles.signOut} onClick={signOut}>
@@ -27,6 +31,7 @@ function Shell() {
       <Routes>
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/approvals/:configId" element={<ApprovalsPage />} />
+        <Route path="/enroll" element={<EnrollPage />} />
         <Route path="*" element={<Navigate to="/approvals" replace />} />
       </Routes>
     </>

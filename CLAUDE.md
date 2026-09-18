@@ -48,6 +48,11 @@ Privacy invariants added by docs/SPEC-PATCH-002.md B (the patch calls them B.6â€
     snapshots.** They must not appear in logs, errors or stack traces, the runs or
     events tables, metrics, or LLM prompts. Log addresses, counts, hashes and ids
     only. Enforced by `Redacted` and `tests/test_privacy_redaction.py`.
+    **Addendum (owner, 2026-09-18):** owner instruction text is treated like cell values for
+    logging and queue purposes. It is persisted only in its designated DB columns
+    (`enrollments.instruction`, and the agent's failure text in `enrollments.failure`/`failures`).
+    It never goes into logs, job payloads, error messages or metrics. Queue jobs carry ids only.
+    Enforced by `tests/test_instruction_privacy.py`.
 14. **(B.7) LLM masking boundary.** `app/agent/masking.py` masks samples before
     they leave the process. Profiles hold structure and distributions only.
 15. **(B.8) Snapshots are encrypted (Fernet, key id stored) and expire**

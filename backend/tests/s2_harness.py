@@ -32,7 +32,7 @@ SID_A = "1SheetAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 SID_B = "1SheetBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 ORG = "org_test"
 T0 = datetime(2026, 9, 16, 5, 0, tzinfo=UTC)  # 10:30 IST, reference TODAY
-TABLES = ["llm_calls", "profiles", "flags", "events", "runs", "snapshots", "watch_state", "configs", "sheets", "orgs"]
+TABLES = ["enrollments", "llm_calls", "profiles", "flags", "events", "runs", "snapshots", "watch_state", "configs", "sheets", "orgs"]
 
 
 def start_postgres(tmp: Path) -> str:

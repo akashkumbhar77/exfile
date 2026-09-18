@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Config, Event, Org, Run, Sheet, SnapshotRow
+from app.models import Config, Enrollment, Event, Org, Run, Sheet, SnapshotRow
 from app.schemas.config import ConfigSpec
 from app.services.describe import describe_config
 from app.services.grid import Workbook
@@ -46,6 +46,36 @@ def config_json(c: Config, include_body: bool = False) -> dict[str, Any]:
     if include_body:
         out["body"] = body
     return out
+
+
+def first_run(s: Session, c: Config) -> dict[str, Any] | None:
+    """The run an approval queued (DECISIONS "Approval queues the first run"), from the DB.
+
+    None unless a `run.queued` event with trigger "approval" exists for this config version, so
+    configs activated without a shown preview never claim a run. Otherwise `state` is "queued"
+    until the first run under this version is recorded (whatever its trigger: a BUSY auto-run
+    re-arms the debouncer and lands as a "change" run), then "done" with that run's outcome."""
+    queued = s.scalar(
+        select(Event).where(Event.sheet_id == c.sheet_id, Event.kind == "run.queued",
+                            Event.payload["config_version"].as_integer() == c.version)
+        .order_by(Event.id).limit(1)
+    )
+    if queued is None:
+        return None
+    rows = list(s.scalars(
+        select(Run).where(Run.sheet_id == c.sheet_id, Run.config_version == c.version,
+                          Run.id == select(func.min(Run.id)).where(Run.sheet_id == c.sheet_id,
+                                                                   Run.config_version == c.version)
+                          .scalar_subquery())
+    ))
+    if not rows:
+        return {"state": "queued", "queued_at": iso(queued.received_at)}
+    run_id = rows[0].run_id
+    group = list(s.scalars(select(Run).where(Run.sheet_id == c.sheet_id, Run.run_id == run_id)))
+    status = max((r.status for r in group), key=lambda st: STATUS_RANK.get(st, 0))
+    return {"state": "done", "queued_at": iso(queued.received_at), "run_id": run_id, "status": status,
+            "trigger": group[0].trigger_type,
+            "rows_affected": sum(r.rows_affected for r in group) if status == "OK" else 0}
 
 
 # ---- runs + undo availability ------------------------------------------------------------
@@ -138,8 +168,12 @@ def open_flags(s: Session, sheet: Sheet) -> list[dict[str, Any]]:
         later = s.scalar(select(Event.id).where(Event.sheet_id == sheet.id, Event.id > last_fail.id,
                                                 Event.kind.in_(["onboarding.proposed", "config.approved"])))
         if later is None:
+            enrollment = s.scalar(select(Enrollment).where(
+                Enrollment.sheet_id == sheet.id, Enrollment.session_id == last_fail.payload.get("session_id")))
+            message = (enrollment.failure if enrollment is not None and enrollment.failure
+                       else "Onboarding couldn't compile the instruction.")
             flags.append({"kind": "onboarding_failed", "opened_at": iso(last_fail.received_at),
-                          "message": str(last_fail.payload.get("reason", ""))[:500]})
+                          "message": message[:500]})
     return flags
 
 
