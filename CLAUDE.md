@@ -67,6 +67,10 @@ Privacy invariants added by docs/SPEC-PATCH-002.md B (the patch calls them B.6�
 - google-api-python-client + service account for Sheets/Apps Script APIs
 - Anthropic API: claude-haiku-4-5 primary, escalate claude-sonnet-4-6 after
   2 validation failures; prompt caching on sheet profiles
+  > **Owner override (2026-09-18):** the agents use the **OpenAI** API instead. The primary
+  > and escalation models are settings (`LLM_PRIMARY_MODEL`, `LLM_ESCALATION_MODEL`); the
+  > escalation policy is unchanged. Caching works through OpenAI's automatic prompt-prefix
+  > caching (profile kept in a stable prefix). See docs/DECISIONS.md "S3".
 - Apps Script (V8) for the in-sheet engine — plain JS, no clasp-bundled deps
 - Frontend: React + Vite, minimal; server state via TanStack Query
 - Snapshots: gzip JSON in Postgres (bytea) for MVP — no S3 yet

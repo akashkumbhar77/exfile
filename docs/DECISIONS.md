@@ -415,3 +415,62 @@ Minimal shapes for actions the SPEC names but doesn't specify:
     becomes a logged NOOP with no writes.
   - This departs from A.3's literal mechanism but keeps its intent ("guards the
     bot-triggers-bot loop … just as actor-filtering did for webhooks"). **Owner to confirm.**
+
+## S3: Plain English in front (SPEC-PATCH-001 S3, SPEC §6, B.7)
+
+### Provider (owner decision, 2026-09-18)
+- **The agent uses OpenAI**, which overrides CLAUDE.md's Anthropic lock. It calls plain
+  chat-completions with tools; there is no agent framework.
+- **Models are settings:** `LLM_PRIMARY_MODEL` (default `gpt-4.1-mini`) and
+  `LLM_ESCALATION_MODEL` (default `gpt-4.1`). They're checked against the key's
+  `models.list` before the first call, and a missing model fails early with a clear message.
+- **Caching:** OpenAI caches long identical prompt prefixes automatically. The system prompt
+  (instructions, JSON Schema, worked example) and the profile go first as a stable prefix.
+  `llm_calls.cached_tokens` records the hits.
+
+### Agent loop
+- **Tools:** `get_profile`, `sample_rows` (masked), `propose_config`. SPEC's separate
+  `run_dry_run` is folded into `propose_config`: a proposal that validates is dry-run on the
+  same grid read at once, and the counts are returned.
+- **The server fills** `sheet_id`, `org_id` and `config_version`, plus the real `schema_hashes`
+  for every tab the model lists (the model writes `"auto"`). A tab that doesn't exist is
+  reported back as an error.
+- **Stopping and escalating.** The first proposal that validates *and* has a dry-run status
+  of OK is stored as PENDING_APPROVAL, and the loop STOPS. If it fails instead:
+  - Each rejected proposal counts as one failed attempt, as does a reply without a proposal,
+    or running out of turns (8 per attempt).
+  - The schedule is 2 failed attempts on the primary model, then 1 on the escalation model
+    (continuing the same conversation, so it sees the earlier validator errors).
+  - After that, the `onboarding.needs_human` event is written (the human ticket) and nothing
+    is stored.
+- **Declines.** A model reply starting with `CANNOT:` ends onboarding with that
+  human-readable reason. This is how a nonsense instruction fails without an ACTIVE config.
+- **Enrollment and approval.** `enroll` first adds the sheet as PENDING (B.9), stores a
+  versioned profile, runs the agent, shows the dry-run, then asks for y/n approval
+  (invariant 11).
+- **Worked example.** The prompt's example is a support-tickets workbook, not the SPEC §1
+  example, which is nearly the reference config itself and would make the S3 exit criterion
+  trivial. A test checks that the example passes the validator.
+
+### Masking and profiles (B.7)
+- **What passes through unmasked:** status-like columns (the header matches STATUS, STAGE,
+  STATE, FREEZE, TYPE, CATEGORY, PRIORITY…, ends in `?`, or every value is yes/no-like). The
+  labels of these columns are structure.
+  - This is never inferred from low cardinality alone, so a column of a few repeated customer
+    names is always masked.
+  - Headers that look like company, email or phone columns are never treated as status-like.
+- **What's masked:**
+  - Text by column kind: `Company_X` for customer/client/vendor columns, `Person_X` for
+    name/contact columns, `Text_X` otherwise. The same original gets the same placeholder
+    within one call.
+  - Values containing digits become random characters of the same shape, and never the
+    input itself.
+  - Emails and phones keep their shape; emails end in `.example`.
+  - Integers keep their digit count; floats get a random value within 0.5–1.5× the original,
+    with the same number of decimals.
+  - Dates shift by one random offset per call (±30–400 days), so their order is kept.
+- **Profiles** hold tab/header/type/fill-rate/distinct counts plus status-label distributions,
+  and nothing else. Tests assert that no free-text value appears in profiles or in anything
+  sent to the LLM.
+- **`llm_calls`** stores metadata only: model, attempt, turn, tokens (including cached),
+  latency, tool names and status. It never stores prompt or reply text.

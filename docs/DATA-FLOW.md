@@ -47,6 +47,8 @@ enforces this.
 
 - **Day to day:** nothing. Sheets are organized by fixed rules, and no AI model runs when a
   sheet changes.
+- **Which provider:** the AI model is OpenAI's API, called from our server. Only the masked
+  content described below is sent.
 - **When a new sheet is enrolled from a plain-English instruction:** the model receives the
   sheet's structure (tab names, column headers, status labels and counts) and a few sample
   rows. The samples are **masked on our server before they are sent**:

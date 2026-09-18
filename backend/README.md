@@ -79,6 +79,22 @@ You can also run `docker compose up -d watcher worker` instead of the two termin
 The Drive API must be enabled for the change feed. The service account only uses read-only
 Drive metadata (`drive.metadata.readonly`).
 
+## S3: enroll from plain English
+
+```
+uv run python cli.py enroll --sheet-id X --approved-by you@example.com \
+  --instruction "Sort each tab by status stage then dispatch date, colour rows by status, highlight overdue in-process rows, and keep a locked SUMMARY of all tabs"
+```
+
+The agent works in this order:
+1. Profiles the sheet: its structure, plus status labels.
+2. Looks at masked sample rows.
+3. Proposes a config, which is validated and dry-run.
+
+Then you approve it, or reject it. If the proposal fails, the agent retries with the errors, up to 2 times on `LLM_PRIMARY_MODEL` and then 1 time on `LLM_ESCALATION_MODEL`. If it still fails, you get a readable reason and nothing is activated.
+
+Needs `OPENAI_API_KEY` in `backend/.env`.
+
 ## Tests
 
 ```

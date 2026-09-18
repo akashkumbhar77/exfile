@@ -60,23 +60,13 @@ look. Two options:
 `engine/` and its tests still run (Node) but aren't used at runtime. Deleting them is a
 separate decision for the owner.
 
-## OPEN (2026-09-18): S3 LLM provider conflicts with the locked stack
-The owner asked to use an "OPEN API KEY" (read as OpenAI) for the onboarding agent. The locked
-stack in CLAUDE.md is the Anthropic API: claude-haiku-4-5 first, escalating to
-claude-sonnet-4-6, with prompt caching on profiles. SPEC §6 also says "plain Anthropic
-tool-use loops". Substituting the provider needs an explicit spec change, so it is not
-assumed.
+## RESOLVED (2026-09-18): S3 LLM provider
+The owner chose OpenAI (see DECISIONS "S3" and the CLAUDE.md override note). The agent is
+built and tested with a scripted LLM.
 
-Separately, no API key of either kind is in `backend/.env` yet.
-
-Built without waiting on this (provider-independent):
-- B.7 masking (`app/agent/masking.py`)
-- the profile builder
-- the `sample_rows` tool
-- their tests
-
-Blocked until it's decided:
-- the compile/validate tool-use loop
-- `llm_calls` logging
-- the `profiles` and `llm_calls` migration
-- `cli.py enroll`
+## OPEN: S3 live exit criteria need `OPENAI_API_KEY`
+- **No key in `backend/.env` yet.** Once it's added:
+  - `enroll` on the real workbook must give a config whose dry-run matches the hand-written one.
+  - A nonsense instruction must fail readably, never producing an ACTIVE config.
+- **Model defaults `gpt-4.1-mini` / `gpt-4.1` aren't verified against the account yet.**
+  `enroll` checks `models.list` first and fails clearly if either model is missing.
