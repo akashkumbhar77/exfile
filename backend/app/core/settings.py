@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     snapshot_retention_days: int = 30
 
     poll_interval_seconds: int = 30
+    debounce_seconds: int = 30
+
+    # S2 registry / queue
+    database_url: str | None = None  # e.g. postgresql+psycopg://user:pass@localhost:5432/sheets
+    redis_url: str = "redis://localhost:6379/0"
+    org_id: str = "org_default"  # single-tenant pilot; org_id is still on every row
 
     @field_validator("enrolled_sheet_ids", mode="before")
     @classmethod

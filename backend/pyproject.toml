@@ -4,11 +4,16 @@ version = "0.1.0"
 description = "Sheets Automation Platform — backend (config compiler, validator, evaluator, API)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "alembic>=1.13",
     "cryptography>=42",
     "google-api-python-client>=2.130",
     "google-auth>=2.29",
+    "psycopg[binary]>=3.2",
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3",
+    "redis>=5",
+    "rq>=1.16",
+    "sqlalchemy>=2.0.30",
     "tzdata>=2024.1",
 ]
 
@@ -17,6 +22,8 @@ dev = [
     "pytest>=8",
     "mypy>=1.10",
     "google-api-python-client-stubs>=1.40.0",
+    "pgserver>=0.1.4",
+    "fakeredis[lua]>=2.38.0",
 ]
 
 [tool.uv]
