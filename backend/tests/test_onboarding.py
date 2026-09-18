@@ -278,3 +278,62 @@ def test_validator_errors_carry_hints(env: Any) -> None:
     run(env, llm)
     rejected = next(m["content"] for _, msgs in llm.sent for m in msgs if m["role"] == "tool")
     assert "`date` is the column name as a string" in rejected
+
+
+def test_skills_load_on_demand_with_their_schema_slice(env: Any) -> None:
+    from app.agent.skills import catalogue, render
+
+    assert {"config-basics", "triggers", "stages-and-sort", "conditions-and-format", "consolidate",
+            "move-copy-cleanup"} <= set(catalogue())
+    text = render(["conditions-and-format", "triggers"])
+    assert '"DateCondition"' in text and '"OnEditTrigger"' in text and '"ConsolidateRule"' not in text
+    llm = ScriptedLlm({"fake-mini": [call("load_skill", {"names": ["config-basics", "nope"]}),
+                                     call("load_skill", {"names": ["config-basics", "consolidate"]}),
+                                     call("propose_config", {"config": compiled_reference()})]})
+    assert run(env, llm).status == "PENDING_APPROVAL"
+    tool_msgs = [m["content"] for _, msgs in llm.sent[-1:] for m in msgs if m["role"] == "tool"]
+    assert "unknown skill" in tool_msgs[0] and "available" in tool_msgs[0]
+    assert "# Consolidate" in tool_msgs[1]
+    system = llm.sent[0][1][0]["content"]
+    assert "load_skill" in system and '"$defs"' not in system  # slim core prompt, no full schema
+
+
+def test_skills_never_contain_the_reference_workbook_solution() -> None:
+    """Prompt/skill examples must not leak the answer the S3 exit criterion checks against."""
+    from app.agent.onboarding import PROMPTS
+    from app.agent.skills import SKILLS_DIR
+
+    texts = [p.read_text(encoding="utf-8") for p in [*SKILLS_DIR.glob("*.md"), *PROMPTS.glob("*")]]
+    for term in ("DISPATCH", "FREEZE", "SOURCE SHEET", "Type of Work", "FCE4EC", "D4A017", "PROCESS", "MACHINES"):
+        assert not any(term.lower() in t.lower() for t in texts), term
+
+
+def test_renaming_an_existing_summary_is_reviewed_once(env: Any) -> None:
+    """First proposal that would rename existing SUMMARY columns is sent back with the diff;
+    proposing the same headers again is accepted (an intended rename still works)."""
+    factory, adapter = env
+    first = ScriptedLlm({"fake-mini": [call("propose_config", {"config": compiled_reference()})]})
+    assert run(env, first).status == "PENDING_APPROVAL"
+    with factory() as s, s.begin():
+        approve_config(s, configs(factory)[0].id, "owner@test")
+    # materialize SUMMARY in the fake sheet so it "exists" for the next onboarding
+    from app.services.live import prepare_run
+    from app.services.runner import RunEvent as _E
+    p = prepare_run(adapter, SID, ConfigSpec.model_validate({**compiled_reference(), "sheet_id": SID, "org_id": ORG,
+                    "config_version": 1, "schema_hashes": first.sent and configs(factory)[0].body["schema_hashes"]}),
+                    _E("change"))
+    adapter.write_ops(SID, p.ops)
+
+    renamed = compiled_reference()
+    renamed["canonical_headers"] = [c if c["canonical"] != "FREEZE?" else {**c, "canonical": "FROZEN"}
+                                    for c in renamed["canonical_headers"]]
+    for rule in renamed["rules"]:
+        for rr in rule.get("cell_rules", []):
+            rr["column"] = "FROZEN"
+        if "on_edit" in rule.get("trigger", {}):
+            rule["trigger"]["on_edit"]["columns"] = ["STATUS", "DISPATCH DATE", "FROZEN"]
+    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": renamed}),
+                                     call("propose_config", {"config": renamed})]})
+    result = run(env, llm)
+    assert result.status == "PENDING_APPROVAL" and len(result.failures) == 1
+    assert '"stage": "review"' in result.failures[0] and "FREEZE?" in result.failures[0]

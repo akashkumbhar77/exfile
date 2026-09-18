@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.adapters.base import Adapter, Grid
 from app.agent.llm import LlmClient, LlmError, LlmReply, parse_args, tool_spec
 from app.agent.profile import build_profile
+from app.agent.skills import catalogue_text, render
 from app.agent.tools import ToolError, sample_rows
 from app.models import LlmCall, Profile
 from app.schemas.config import ConfigSpec
@@ -43,6 +44,7 @@ log = logging.getLogger("app.agent")
 
 PROMPTS = Path(__file__).parent / "prompts"
 PROMPT_VERSION = "onboarding-v3"
+SKILLS_PROMPT_VERSION = "onboarding-v4-skills"
 DECLINE_PREFIX = "CANNOT:"
 
 
@@ -53,6 +55,7 @@ class ModelPlan:
     primary_attempts: int = 2
     escalation_attempts: int = 1
     max_turns_per_attempt: int = 8
+    use_skills: bool = True  # v4: slim prompt + load_skill (see app/agent/skills.py)
 
 
 @dataclass
@@ -68,7 +71,10 @@ class OnboardingResult:
     model: str | None = None
 
 
-def system_prompt() -> str:
+def system_prompt(use_skills: bool = False) -> str:
+    if use_skills:
+        text = (PROMPTS / "onboarding_skills.md").read_text(encoding="utf-8")
+        return text.replace("{catalogue}", catalogue_text())
     schema = json.dumps(ConfigSpec.model_json_schema(by_alias=True), separators=(",", ":"))
     example = (PROMPTS / "example_config.json").read_text(encoding="utf-8")
     text = (PROMPTS / "onboarding.md").read_text(encoding="utf-8")
@@ -86,6 +92,14 @@ TOOLS = [
 ]
 # The config object is free-form for the function schema; the validator is the real contract.
 TOOLS[2]["function"]["parameters"]["properties"]["config"]["additionalProperties"] = True
+LOAD_SKILL = tool_spec(
+    "load_skill", "Load reference skills (syntax, pitfalls, JSON Schema) for parts of the config. "
+    "Request all you need in one call.",
+    {"names": {"type": "array", "items": {"type": "string"}, "minItems": 1}}, ["names"])
+
+
+def tools_for(use_skills: bool) -> list[dict[str, Any]]:
+    return [*TOOLS, LOAD_SKILL] if use_skills else TOOLS
 
 
 class _Attempt(Exception):
@@ -106,6 +120,12 @@ class _Session:
     now: datetime | None
     messages: list[dict[str, Any]] = field(default_factory=list)
     accepted: OnboardingResult | None = None
+    use_skills: bool = False
+    reviewed_targets: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    @property
+    def prompt_version(self) -> str:
+        return SKILLS_PROMPT_VERSION if self.use_skills else PROMPT_VERSION
 
     # -- tools --
     def run_tool(self, name: str, args: dict[str, Any], model: str) -> str:
@@ -115,6 +135,14 @@ class _Session:
             return sample_rows(self.grid.workbook, str(args.get("tab", "")), int(args.get("n", 10)))
         if name == "propose_config":
             return self.propose(args.get("config"), model)
+        if name == "load_skill" and self.use_skills:
+            names = args.get("names")
+            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+                raise ToolError("load_skill: `names` must be a list of skill names")
+            try:
+                return render(names)
+            except KeyError as exc:
+                raise ToolError(str(exc)) from exc
         raise ToolError(f"unknown tool {name!r}")
 
     def propose(self, raw: Any, model: str) -> str:
@@ -158,29 +186,53 @@ class _Session:
             raise _Attempt(json.dumps({"ok": False, "stage": "headers", "errors": ambiguous, "notes": notes}))
         prepared = prepare_run(self.adapter, self.sheet_ref, config, RunEvent("change"), now=self.now, grid=self.grid)
         report = prepared.report
+        targets_info = target_headers(config, self.grid, prepared.result.workbook)
         summary = {
             "status": report.status,
             "rules": [{"id": r.rule_id, "action": r.action, "rows_affected": r.rows_affected, "tabs": r.tabs,
                        "error": r.error, "blocked": r.blocked} for r in report.rules],
             "per_tab": {t: s.model_dump() for t, s in report.per_tab.items()},
             "warnings": report.warnings[:20],
-            "consolidate_targets": target_headers(config, self.grid, prepared.result.workbook),
+            "consolidate_targets": targets_info,
             "notes": notes,
         }
         if report.status != "OK":
             raise _Attempt(json.dumps({"ok": False, "stage": "dry_run", "dry_run": summary}))
+        renames = self.review_target_renames(targets_info)
+        if renames:
+            raise _Attempt(json.dumps({"ok": False, "stage": "review", "renamed_columns": renames,
+                                       "hint": "an existing summary tab would change its column names. Reuse "
+                                               "its existing spellings as canonical names; if the instruction "
+                                               "really asks for these names, propose the same config again."}))
 
         with self.factory() as s, s.begin():
             _, row = propose_config(s, self.org_id, config)
             record_event(s, _sheet(s, self.sheet_pk), "onboarding.proposed", {
                 "session_id": self.session_id, "config_version": row.version, "model": model,
-                "prompt_version": PROMPT_VERSION, "dry_run_status": report.status,
+                "prompt_version": self.prompt_version, "dry_run_status": report.status,
                 "rules": [r.rule_id for r in report.rules],
             })
             config_id, version = row.id, row.version
         self.accepted = OnboardingResult("PENDING_APPROVAL", self.session_id, config_id=config_id,
                                          config_version=version, config=config, report=report, model=model)
         return json.dumps({"ok": True, "stored_as": "PENDING_APPROVAL", "dry_run": summary})
+
+    def review_target_renames(self, targets: dict[str, Any]) -> list[dict[str, Any]]:
+        """Existing consolidate targets whose headers would change. Each distinct header set is sent
+        back once; proposing the same headers again accepts them (the model saw the diff)."""
+        out: list[dict[str, Any]] = []
+        for target, info in targets.items():
+            old, new = info.get("existing_headers"), info.get("resulting_headers") or []
+            if not old:
+                continue  # a new target tab: nothing to preserve
+            key = tuple(new)
+            if [h for h in new if h] == [h for h in old if h] or self.reviewed_targets.get(target) == key:
+                continue
+            self.reviewed_targets[target] = key
+            gone = [h for h in old if h and h not in new]
+            added = [h for h in new if h and h not in old]
+            out.append({"target_tab": target, "existing_columns_lost": gone, "new_columns": added})
+        return out
 
     # -- logging --
     def log_call(self, model: str, attempt: int, turn: int, reply: LlmReply | None, error: str | None) -> None:
@@ -281,9 +333,10 @@ def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, pl
                      f"model(s) {missing} are not available to this API key; set LLM_PRIMARY_MODEL / "
                      "LLM_ESCALATION_MODEL", [])
 
-    sess = _Session(factory, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now)
+    sess = _Session(factory, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now,
+                    use_skills=plan.use_skills)
     sess.messages = [
-        {"role": "system", "content": system_prompt()},
+        {"role": "system", "content": system_prompt(plan.use_skills)},
         {"role": "system", "content": "Workbook profile:\n" + json.dumps(profile, ensure_ascii=False)},
         {"role": "user", "content": instruction.strip()},
     ]
@@ -311,7 +364,7 @@ def _run_attempt(sess: _Session, model: str, attempt: int, max_turns: int) -> st
     Returns a failure description ('' never: acceptance is signalled via sess.accepted)."""
     for turn in range(1, max_turns + 1):
         try:
-            reply = sess.llm.chat(model, sess.messages, TOOLS)
+            reply = sess.llm.chat(model, sess.messages, tools_for(sess.use_skills))
         except LlmError as exc:
             sess.log_call(model, attempt, turn, None, str(exc))
             return f"LLM request failed: {exc}"

@@ -68,13 +68,12 @@ built and tested with a scripted LLM.
 - [x] **A nonsense instruction ends in a human-readable failure and never an ACTIVE config**
   (session onb_b24503822f18).
 - [~] **Plain English → same behaviour as the hand-written config.**
-  - With `gpt-5-mini` → `gpt-5.1` and prompt v3, every tab matches exactly (values, headers,
-    colours) except the SUMMARY title banner. Pending configs v6 and v7 on sheet 2.
-  - With the default `gpt-4.1` models it's unreliable (see DECISIONS "S3 live findings").
+  - With the defaults (`gpt-5-mini`, skills, rename review), 3 of 3 runs match exactly on
+    every tab's values, headers and colours (configs v17–v19 on sheet 2, PENDING_APPROVAL).
+  - The only difference is the SUMMARY title banner, which can't be inferred under B.7.
 
 Owner decisions needed:
-1. **Model defaults:** switch `LLM_PRIMARY_MODEL` / `LLM_ESCALATION_MODEL` to `gpt-5-mini` /
-   `gpt-5.1`?
-2. **SUMMARY title:** accept no title banner on compiled configs, or allow tab titles through
-   to the model, or keep an existing target's title when a config sets none?
-3. **Pending configs v2–v7 on sheet 2** (trial proposals): reject them, or approve one?
+1. **SUMMARY title:** (a) accept no banner, (b) let tab titles reach the model, or (c) the
+   engine keeps an existing target's title when a config sets none. Recommended: (c).
+2. **Trial configs v2–v19 on sheet 2** (all PENDING_APPROVAL, none live): reject them all, or
+   approve one (v19 is a good candidate once the title question is settled).

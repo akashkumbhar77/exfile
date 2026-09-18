@@ -19,8 +19,9 @@ touch the sheet yourself. Your only output artifact is a config proposed via `pr
 
 ## Config language essentials
 - Columns are referenced by canonical names. `canonical_headers` maps real header variants to
-  one canonical name (`contains:X` / `equals:X`, case-insensitive). A header matching no entry
-  keeps its own trimmed text as its canonical name.
+  one canonical name (`contains:X` / `equals:X`, case-insensitive). Declare every column a rule,
+  enum or condition references (the validator rejects undeclared ones); other headers keep
+  their own trimmed text.
 - `schema_hashes` lists the governed tabs: only these are organized. Include every tab the
   instruction applies to; never include a consolidate `target_tab`.
 - `enums` define custom stage orders for status-like columns. Stages are matched in list
@@ -36,30 +37,30 @@ touch the sheet yourself. Your only output artifact is a config proposed via `pr
 
 ## Rules that proposals most often get wrong
 - **Condition syntax.** Each condition is a flat object whose values are strings:
-  - date: `{"date": "DISPATCH DATE", "before": "today"}` — the column name is the string value
-    of `date`. WRONG: `{"date": {"column": "DISPATCH DATE", "before": "today"}}`.
-  - value: `{"column": "FREEZE?", "equals": "YES"}` (in `cell_rules` the rule's `column` is used,
+  - date: `{"date": "DUE DATE", "before": "today"}` — the column name is the string value
+    of `date`. WRONG: `{"date": {"column": "DUE DATE", "before": "today"}}`.
+  - value: `{"column": "VIP?", "equals": "YES"}` (in `cell_rules` the rule's `column` is used,
     so `{"equals": "YES"}` is enough). `equals`/`contains` take strings, `is_blank` a boolean.
-  - enum: `{"enum": "STATUS", "is": "COMPLETED"}` where `is` is one of the stage `value`s.
+  - enum: `{"enum": "TICKET STATE", "is": "RESOLVED"}` where `is` is one of the stage `value`s.
   - combine with `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`.
 - **Consolidate targets are never rule inputs.** To sort or colour the target, set the consolidate
   rule's `sort_like` / `format_like` to the ids of the source tabs' sort / format rules. Never
   list the target in `schema_hashes`, in another rule's `tabs`, or in `sources`.
-- **Match stages on distinctive fragments** (`contains:PROCESS`, `contains:COMPLET`,
-  `contains:CANCEL`), not full labels, so spelling variants (`In Process`, `A. IN PROCESS`,
-  `IN-PROCESS`) still match. List stages whose fragment is contained in another stage's label
-  AFTER that stage (e.g. `DISPUTED` before `DISPATCHED` when both start with `DISP`) — stages
-  are matched in list order. Stage `value`s are your own clean names (e.g. `IN-PROCESS`).
+- **Match stages on distinctive fragments** (`contains:WAIT`, `contains:RESOLV`), not full
+  labels, so spelling variants (`Waiting`, `2. WAITING ON CUSTOMER`) still match. Stages are
+  matched in list order and the first match wins: if one stage's fragment also occurs in
+  another stage's labels (e.g. `OPEN` inside `REOPENED`), list the more specific stage first
+  or use a longer fragment. Stage `value`s are your own clean names (e.g. `WAITING`).
 - **Reuse existing header text for canonical names.** If a tab already uses a header spelling
   (including an existing consolidate target tab listed in the profile), use exactly that text
-  as the `canonical` name (e.g. keep `FREEZE?` or `Type of Work` as written) instead of
+  as the `canonical` name (e.g. keep `VIP?` or `Due date` as written) instead of
   inventing a new spelling; prefer `contains:` patterns to cover the variants.
 - **Prefer `all_with:<COLUMN>`** for `tabs` / `sources` when the instruction means "every tab that
   has this column", so new tabs of the same shape are covered automatically.
 - **Later format rules win.** Every matching row rule is applied in list order and a later rule
   overrides an earlier one attribute by attribute (font, background, strike); `cell_rules` apply
-  after all row rules. Put general rules first and exceptions AFTER them: e.g. "in-process rows
-  red, but overdue in-process rows black on pink" = the red rule first, the overdue rule last
+  after all row rules. Put general rules first and exceptions AFTER them: e.g. "open tickets
+  blue, but overdue open tickets white on red" = the blue rule first, the overdue rule last
   (setting both font and background). Only set `default` when the instruction asks for neutral
   formatting of rows no rule matches.
 

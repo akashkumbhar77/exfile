@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(  # type: ignore[pydantic-alias]  # OPEN_AI_API_KEY accepted too
         default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_AI_API_KEY")
     )
-    llm_primary_model: str = "gpt-4.1-mini"
-    llm_escalation_model: str = "gpt-4.1"
+    llm_primary_model: str = "gpt-5-mini"  # owner decision 2026-09-18 (4/4 live vs 1/7 for gpt-4.1)
+    llm_escalation_model: str = "gpt-5.1"
+    llm_use_skills: bool = True  # slim prompt + on-demand skills (app/agent/skills)
     llm_primary_attempts: int = 2  # failed proposals allowed on the primary model
     llm_escalation_attempts: int = 1  # then on the escalation model, then a human ticket
     llm_max_turns_per_attempt: int = 8

@@ -185,7 +185,7 @@ def cmd_enroll(args: argparse.Namespace) -> int:
     factory = _factory(settings)
     adapter = SheetsAdapter.from_service_account(_key(settings), DbRegistry(factory))
     plan = ModelPlan(settings.llm_primary_model, settings.llm_escalation_model, settings.llm_primary_attempts,
-                     settings.llm_escalation_attempts, settings.llm_max_turns_per_attempt)
+                     settings.llm_escalation_attempts, settings.llm_max_turns_per_attempt, settings.llm_use_skills)
     print(f"compiling with {plan.primary} (escalation {plan.escalation}) ...")
     result = onboard(factory, adapter, OpenAIClient(settings.openai_api_key), plan, settings.org_id,
                      args.sheet_id, args.instruction)

@@ -506,3 +506,35 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   headers, tab names and status labels reach the model, so a compiled config has no
   `presentation.title`. Owner decision pending.
 - **`OPEN_AI_API_KEY` is accepted** as an alias of `OPENAI_API_KEY` (the owner's `.env` uses it).
+
+### Skills and defaults (owner request, 2026-09-18)
+- **Defaults: `gpt-5-mini` → `gpt-5.1`, with skills on** (`LLM_USE_SKILLS=true`).
+- **Skills are on-demand reference docs** (`app/agent/skills/*.md`), loaded with a `load_skill`
+  tool. It's a plain tool, so the "no agent framework" rule still holds.
+  - The core prompt (v4, about 0.8k tokens) holds the workflow, a config skeleton, and a
+    one-line catalogue.
+  - Each skill returns its guidance plus exactly its slice of the JSON Schema (`schema_defs`
+    in its front matter; a test checks they exist).
+  - The six skills are config-basics, triggers, stages-and-sort, conditions-and-format,
+    consolidate, and move-copy-cleanup.
+- **Correction, stated plainly: earlier runs had answer hints.** The v2/v3 prompt examples
+  used the reference workbook's own specifics (DISPATCH DATE, FREEZE?, "in-process red,
+  overdue black on pink"), which helped the earlier gpt-5 runs.
+  - All prompts and skills now use a support-tickets example domain instead.
+  - A test fails if any prompt or skill contains the reference solution's terms.
+  - The comparison below was run after this fix.
+- **A doc bug fixed along the way.** The docs said undeclared columns keep their header text;
+  in fact the validator rejects any rule reference to an undeclared column (SPEC §1). Every
+  skills run was losing one attempt to this.
+- **Live comparison** (sheet 2, same instruction, gpt-5-mini, answer-free prompts, three
+  runs each):
+
+  | variant | proposed | failed attempts | input tokens/run | exact except title |
+  |---|---|---|---|---|
+  | full prompt v3 | 3/3 | 1 each | ~48.5k | 2/3 (1 rule-order colour error) |
+  | skills v4 | 3/3 | 0 | ~18k (−63%) | 2/3 (1 renamed summary column) |
+  | skills v4 + rename review | 3/3 | 0, 0, 1 | 18k / 18k / 31k | **3/3** |
+- **One-time review of renames on an existing consolidate target.** A proposal that would
+  rename an existing summary tab's columns is sent back once, listing the lost and new
+  columns. Proposing the same headers again is accepted, so an intended rename still works.
+  This catches silent renames without blocking deliberate ones.
