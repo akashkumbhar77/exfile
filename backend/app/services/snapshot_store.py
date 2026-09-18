@@ -5,9 +5,9 @@ Fernet-encrypted at rest and carry the id of the key that sealed them. Stored
 snapshots older than `retention_days` are purged; restoring a purged run fails
 with `SnapshotExpired`.
 
-S1 has no database yet, so the store is a directory of per-run files. S2 moves
-the same records into the Postgres `snapshots` table (body_gz = ciphertext,
-key_id column) without changing this interface.
+`LocalSnapshotStore` (per-run files) serves the S1 file-config CLI path;
+`DbSnapshotStore` (Postgres `snapshots`, body_gz = ciphertext, key_id column)
+serves registered sheets from S2 on. Both expose save/load.
 """
 
 from __future__ import annotations
@@ -18,8 +18,11 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.snapshots import Snapshot
 
@@ -126,3 +129,75 @@ class LocalSnapshotStore:
                 path.unlink()
                 purged.append(run_id)
         return purged
+
+
+class SnapshotStore(Protocol):
+    def save(self, run_id: str, sheet_ref: str, snapshots: list[Snapshot], now: datetime | None = None) -> object: ...
+
+    def load(self, run_id: str) -> tuple[str, list[Snapshot]]: ...
+
+
+class DbSnapshotStore:
+    """Postgres `snapshots` table (B.8). Each save commits on its own, before any sheet write."""
+
+    def __init__(self, factory: sessionmaker[Session], cipher: SnapshotCipher) -> None:
+        self.factory = factory
+        self.cipher = cipher
+
+    def save(self, run_id: str, sheet_ref: str, snapshots: list[Snapshot], now: datetime | None = None) -> int:
+        from app.models import Sheet, SnapshotRow
+
+        with self.factory() as s, s.begin():
+            sheet = s.scalar(select(Sheet).where(Sheet.google_sheet_id == sheet_ref))
+            if sheet is None:
+                raise SnapshotError(f"sheet {sheet_ref} is not registered")
+            for seq, snap in enumerate(snapshots):
+                s.add(SnapshotRow(
+                    org_id=sheet.org_id, sheet_id=sheet.id, run_id=run_id, seq=seq, rule_id=snap.rule_id,
+                    tab=snap.tab, range_a1=snap.range_a1, existed=snap.existed,
+                    body_gz=self.cipher.seal(snap.body_gz), key_id=self.cipher.key_id,
+                    **({"created_at": now} if now else {}),
+                ))
+        return len(snapshots)
+
+    def load(self, run_id: str) -> tuple[str, list[Snapshot]]:
+        from app.models import Org, Sheet, SnapshotRow
+
+        with self.factory() as s:
+            rows = list(s.scalars(select(SnapshotRow).where(SnapshotRow.run_id == run_id).order_by(SnapshotRow.seq)))
+            if not rows:
+                raise SnapshotError(f"no snapshot stored for run {run_id}")
+            sheet = s.get(Sheet, rows[0].sheet_id)
+            assert sheet is not None
+            if any(r.body_gz is None for r in rows):
+                org = s.get(Org, rows[0].org_id)
+                days = org.snapshot_retention_days if org else 0
+                raise SnapshotExpired(
+                    f"run {run_id} is older than the {days}-day snapshot retention; "
+                    "its snapshot was purged and it can no longer be undone"
+                )
+            snaps = [
+                Snapshot(run_id, r.rule_id, r.tab, r.range_a1, r.existed,
+                         self.cipher.open(r.body_gz, r.key_id))  # type: ignore[arg-type]
+                for r in rows
+            ]
+            return sheet.google_sheet_id, snaps
+
+
+def purge_expired_snapshots(factory: sessionmaker[Session], now: datetime | None = None) -> int:
+    """Daily job (B.8): drop snapshot bodies past each org's retention; rows stay as tombstones."""
+    from app.models import Org, SnapshotRow
+
+    now = now or datetime.now(UTC)
+    purged = 0
+    with factory() as s, s.begin():
+        for org in s.scalars(select(Org)):
+            cutoff = now - timedelta(days=org.snapshot_retention_days)
+            result = s.execute(
+                update(SnapshotRow)
+                .where(SnapshotRow.org_id == org.id, SnapshotRow.created_at < cutoff,
+                       SnapshotRow.body_gz.is_not(None))
+                .values(body_gz=None, purged_at=now)
+            )
+            purged += int(getattr(result, "rowcount", 0) or 0)
+    return purged

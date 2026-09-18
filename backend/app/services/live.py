@@ -20,7 +20,7 @@ from app.services.dry_run import DryRunReport, summarize_plan
 from app.services.executor import ExecutionResult, execute_run
 from app.services.ops import OpSummary, diff_workbooks, summarize_ops
 from app.services.runner import RunEvent
-from app.services.snapshot_store import LocalSnapshotStore
+from app.services.snapshot_store import SnapshotStore
 
 log = logging.getLogger("app.run")
 
@@ -60,12 +60,14 @@ def prepare_run(
     event: RunEvent | None = None,
     run_id: str | None = None,
     now: datetime | None = None,
+    grid: Grid | None = None,
 ) -> PreparedRun:
     if config.sheet_id != source_ref:
         raise ConfigMismatch(f"config is for sheet {config.sheet_id!r}, not {source_ref!r}")
     run_id = run_id or new_run_id()
     event = event or RunEvent.manual()
-    grid = adapter.read_grid(source_ref)
+    if grid is None:
+        grid = adapter.read_grid(source_ref)
     today = (now or datetime.now(UTC)).astimezone(ZoneInfo(grid.timezone)).date()
     ctx = EvalContext(run_id=run_id, today=today)
 
@@ -80,7 +82,7 @@ def prepare_run(
     return prepared
 
 
-def commit_run(adapter: Adapter, prepared: PreparedRun, store: LocalSnapshotStore) -> WriteResult:
+def commit_run(adapter: Adapter, prepared: PreparedRun, store: SnapshotStore) -> WriteResult:
     """Snapshot, re-check the sheet is unchanged since planning, then write all ops atomically."""
     run_id = prepared.run_id
     if not prepared.ops:
