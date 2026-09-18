@@ -715,3 +715,34 @@ Minimal shapes for actions the SPEC names but doesn't specify:
 - **Fixed alongside:** rule-level run rows always recorded `trigger_type` "change", the engine's
   event kind, even for `cli.py run` (manual). `record_runs` now records the trigger that started
   the job.
+
+### Instruction text stays in Postgres (B.6 addendum, owner, 2026-09-18)
+- **Found live:** RQ logs each job's call, so the worker log printed the owner's enroll
+  instruction verbatim. The same text also sat in the job payload in Redis (and in the
+  failed-job registry for a day). The instruction quoted a status value, `IN-PROGRESS`.
+  Instructions quote data, and can name people or clients ("move rows for client X").
+- **Rule (added to CLAUDE.md invariant 13):** owner instruction text is treated like cell
+  values. It is persisted only in its designated DB columns, and never in logs, job payloads,
+  error messages or metrics. It is a blanket rule, not decided case by case.
+- **Structural fix, not just a quieter log:**
+  - New table `enrollments` (migration 0004). Its `instruction` column is the only home of the
+    text. The agent's failure text (`failure`, `failures`) lives there too, because the decline
+    reason often quotes the instruction.
+  - `POST /sheets` writes the row and enqueues `run_onboarding(enrollment_id)` with the
+    description `onboarding:{id}`. The worker reads the instruction from Postgres.
+  - Job meta in Redis holds ids and states only. `GET /jobs/{id}` reads the failure text from
+    the enrollment row, and org-scopes it.
+  - The `onboarding.needs_human` event no longer carries `reason`. The sheet's
+    `onboarding_failed` flag reads it from the enrollment, matched by `session_id`.
+  - Migration 0004 strips `reason` from existing `onboarding.needs_human` events.
+- **Guard:** `tests/test_instruction_privacy.py` runs the job through a real async RQ queue and
+  a SimpleWorker on fakeredis, with a client-name marker in the instruction and a model decline
+  that quotes it. It scans every Redis key and value, with RQ's zlib payloads decompressed,
+  plus the logs, events, runs and llm_calls. The marker may appear only in `enrollments` and
+  in the API response the owner sees. It was mutation-checked against three regressions, each
+  caught: the instruction in the job args, the failure text in job meta, and the reason in the
+  event.
+- **Not covered:** `cli.py enroll` runs onboarding in-process, with no queue and no enrollment
+  row. It prints the failure to the owner's terminal only. The model prompt necessarily carries
+  the instruction; that is the B.7 boundary, and prompts are not persisted (`llm_calls` holds
+  counts only).

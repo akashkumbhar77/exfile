@@ -191,3 +191,27 @@ class LlmCall(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)  # OK | ERROR
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _now()
+
+
+class Enrollment(Base):
+    """One Enroll-page submission (SPEC-PATCH-003 B2).
+
+    The owner's instruction and the agent's failure text are persisted ONLY here (CLAUDE.md B.6:
+    owner instruction text is treated like cell values). They never go into logs, RQ job
+    arguments or meta (Redis), events, error messages or metrics: the onboarding job is enqueued
+    with this row's id and reads the instruction from the DB."""
+
+    __tablename__ = "enrollments"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(ForeignKey("orgs.id"), nullable=False, index=True)
+    sheet_id: Mapped[int] = mapped_column(ForeignKey("sheets.id"), nullable=False, index=True)
+    instruction: Mapped[str] = mapped_column(Text, nullable=False)
+    # queued | running | proposed | failed
+    state: Mapped[str] = mapped_column(String(32), nullable=False, server_default="queued")
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    config_id: Mapped[int | None] = mapped_column(ForeignKey("configs.id"), nullable=True)
+    failure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failures: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = _now()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

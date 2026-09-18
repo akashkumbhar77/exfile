@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.deps import Auth, Ctx, job_queue
 from app.api.errors import ApiError
 from app.core.settings import get_settings
+from app.models import Enrollment
 from app.services.views import fleet_summary
 
 router = APIRouter(tags=["fleet"], dependencies=[Auth])
@@ -50,12 +51,21 @@ def job(ctx: Ctx, job_id: str) -> dict[str, Any]:
         raise ApiError(404, f"job {job_id} not found") from exc
     meta = dict(j.meta or {})
     state = meta.get("state", "queued")
+    failure: str | None = None
+    failures: list[str] = []
+    enrollment_id = meta.get("enrollment_id")
+    if enrollment_id is not None:  # failure text lives in Postgres only (B.6 addendum)
+        with ctx.factory() as s:
+            row = s.get(Enrollment, int(enrollment_id))
+            if row is None or row.org_id != ctx.org_id:
+                raise ApiError(404, f"job {job_id} not found")
+            failure, failures = row.failure, list(row.failures or [])
     if j.is_failed and state not in ("failed", "proposed"):
-        state, meta["failure"] = "failed", "onboarding stopped unexpectedly; see server logs"
+        state, failure = "failed", "onboarding stopped unexpectedly; see server logs"
     return {
         "job_id": j.id, "state": state, "sheet_id": meta.get("sheet_id"),
         "config_id": meta.get("config_id"), "config_version": meta.get("config_version"),
-        "failure": meta.get("failure"), "failures": meta.get("failures", []),
+        "failure": failure if state == "failed" else None, "failures": failures if state == "failed" else [],
         "session_id": meta.get("session_id"), "model": meta.get("model"), "updated_at": meta.get("updated_at"),
         "done": state in ("proposed", "failed"),
     }

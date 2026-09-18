@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Config, Event, Org, Run, Sheet, SnapshotRow
+from app.models import Config, Enrollment, Event, Org, Run, Sheet, SnapshotRow
 from app.schemas.config import ConfigSpec
 from app.services.describe import describe_config
 from app.services.grid import Workbook
@@ -168,8 +168,12 @@ def open_flags(s: Session, sheet: Sheet) -> list[dict[str, Any]]:
         later = s.scalar(select(Event.id).where(Event.sheet_id == sheet.id, Event.id > last_fail.id,
                                                 Event.kind.in_(["onboarding.proposed", "config.approved"])))
         if later is None:
+            enrollment = s.scalar(select(Enrollment).where(
+                Enrollment.sheet_id == sheet.id, Enrollment.session_id == last_fail.payload.get("session_id")))
+            message = (enrollment.failure if enrollment is not None and enrollment.failure
+                       else "Onboarding couldn't compile the instruction.")
             flags.append({"kind": "onboarding_failed", "opened_at": iso(last_fail.received_at),
-                          "message": str(last_fail.payload.get("reason", ""))[:500]})
+                          "message": message[:500]})
     return flags
 
 

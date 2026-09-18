@@ -411,8 +411,10 @@ def _run_attempt(sess: _Session, model: str, attempt: int, max_turns: int) -> st
 def _fail(factory: sessionmaker[Session], sheet_pk: int, session_id: str, reason: str,
           failures: list[str]) -> OnboardingResult:
     with factory() as s, s.begin():
+        # no reason text here: it can quote the instruction (B.6 addendum). The Enroll job keeps it
+        # in enrollments.failure, keyed by session_id.
         record_event(s, _sheet(s, sheet_pk), "onboarding.needs_human", {
-            "session_id": session_id, "reason": reason[:500], "failed_attempts": len(failures),
+            "session_id": session_id, "failed_attempts": len(failures),
         })
     log.warning("onboarding.failed session=%s attempts=%d", session_id, len(failures))
     return OnboardingResult("FAILED", session_id, reason=reason, failures=failures)

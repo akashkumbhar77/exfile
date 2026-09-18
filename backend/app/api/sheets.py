@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.api.deps import Auth, Ctx, job_queue, registered_sheet
 from app.api.errors import ApiError
-from app.models import Config, Sheet
+from app.models import Config, Enrollment, Sheet
 from app.schemas.config import ConfigSpec
 from app.services.grid import cell_text
 from app.services.operations import UndoRefused, resume_sheet, undo_run
@@ -115,8 +115,16 @@ def enroll(ctx: Ctx, body: EnrollBody) -> dict[str, Any]:
     with ctx.factory() as s, s.begin():
         ensure_org(s, ctx.org_id)
         sheet_pk = ensure_pending_sheet(s, ctx.org_id, ref).id
-    job = job_queue().enqueue(run_onboarding, ref, body.instruction, job_timeout=900, result_ttl=86400,
-                              failure_ttl=86400, meta={"state": "queued", "sheet_id": sheet_pk})
+        row = Enrollment(org_id=ctx.org_id, sheet_id=sheet_pk, instruction=body.instruction.strip())
+        s.add(row)
+        s.flush()
+        enrollment_id = row.id
+    # B.6 addendum: the job carries the enrollment id only; the instruction stays in Postgres
+    job = job_queue().enqueue(run_onboarding, enrollment_id, description=f"onboarding:{enrollment_id}",
+                              job_timeout=900, result_ttl=86400, failure_ttl=86400,
+                              meta={"state": "queued", "sheet_id": sheet_pk, "enrollment_id": enrollment_id})
+    with ctx.factory() as s, s.begin():
+        s.get(Enrollment, enrollment_id).job_id = job.id  # type: ignore[union-attr]
     return {"job_id": job.id, "sheet_id": sheet_pk, "google_sheet_id": ref, "state": "queued"}
 
 
