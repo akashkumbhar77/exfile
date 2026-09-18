@@ -69,3 +69,14 @@ built and tested with a scripted LLM.
 - [x] **Plain English gives the same behaviour as the hand-written config.** Config v20
   (id 21) matches on every tab once the owner title (PATCH-003 decision (c)) is applied. It's
   left PENDING_APPROVAL, to be approved end to end from the Approvals page (PATCH-003 B1 exit).
+
+## S5 / PATCH-003 B1 Approvals: exit status (2026-09-18)
+- [x] **The S3 final enrolment of sheet 2 is approvable end to end from the page.** The owner
+  approved config v20 (id 21) in the dashboard at 13:10:11 (`POST /configs/21/approve` returned
+  200). v20 is ACTIVE with approved_by "Akash"; v1 is SUPERSEDED; the sheet stays ACTIVE on
+  config 21; the `config.approved` event is recorded; nothing was written to the sheet.
+- [ ] **Rejecting leaves a reason visible in config history, live.** It's covered by the API
+  and component tests, but not yet done live because no pending config remains. To do: reject a
+  throwaway proposal from the page.
+- Live finding fixed during the check: see DECISIONS "google_http" (per-thread Google clients,
+  503 google_unavailable, Retry on the preview).
