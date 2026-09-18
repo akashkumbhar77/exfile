@@ -59,3 +59,24 @@ look. Two options:
 ## Note: Engine.gs is still in the repo
 `engine/` and its tests still run (Node) but aren't used at runtime. Deleting them is a
 separate decision for the owner.
+
+## OPEN (2026-09-18): S3 LLM provider conflicts with the locked stack
+The owner asked to use an "OPEN API KEY" (read as OpenAI) for the onboarding agent. The locked
+stack in CLAUDE.md is the Anthropic API: claude-haiku-4-5 first, escalating to
+claude-sonnet-4-6, with prompt caching on profiles. SPEC §6 also says "plain Anthropic
+tool-use loops". Substituting the provider needs an explicit spec change, so it is not
+assumed.
+
+Separately, no API key of either kind is in `backend/.env` yet.
+
+Built without waiting on this (provider-independent):
+- B.7 masking (`app/agent/masking.py`)
+- the profile builder
+- the `sample_rows` tool
+- their tests
+
+Blocked until it's decided:
+- the compile/validate tool-use loop
+- `llm_calls` logging
+- the `profiles` and `llm_calls` migration
+- `cli.py enroll`
