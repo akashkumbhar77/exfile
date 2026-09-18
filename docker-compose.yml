@@ -1,0 +1,60 @@
+# Local dev stack: postgres, redis, migrations, fleet watcher, run worker.
+#   docker compose up -d postgres redis && docker compose run --rm migrate
+#   docker compose up -d watcher worker
+# Secrets come from backend/.env; the service-account key is mounted read-only.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: sheets
+      POSTGRES_PASSWORD: sheets
+      POSTGRES_DB: sheets
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sheets"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  migrate:
+    build: ./backend
+    env_file: backend/.env
+    environment: &stack_env
+      DATABASE_URL: postgresql+psycopg://sheets:sheets@postgres:5432/sheets
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa.json
+    volumes: &secrets
+      - ${SA_KEY_PATH:?set SA_KEY_PATH to the service-account JSON on the host}:/secrets/sa.json:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    command: ["alembic", "upgrade", "head"]
+    profiles: ["tools"]
+
+  watcher:
+    build: ./backend
+    env_file: backend/.env
+    environment: *stack_env
+    volumes: *secrets
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    command: ["python", "cli.py", "watch"]
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    env_file: backend/.env
+    environment: *stack_env
+    volumes: *secrets
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    command: ["python", "cli.py", "worker"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
