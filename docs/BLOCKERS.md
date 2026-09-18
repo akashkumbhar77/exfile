@@ -21,20 +21,25 @@ Operational notes:
   ("Auto-generated consolidated summary — locked"), not just on the file.
 - The sheet's time zone is set to Asia/Calcutta (IST).
 
-## OPEN: S2 live exit criteria need Postgres and Redis on a machine you control
-S2 is built, and the exit criteria pass in tests (backend/tests/test_s2_watch.py: real
-Postgres, fake Redis with real RQ jobs, two sheets watched at once). The live criteria on
-the real workbook still need a running Postgres and Redis. This machine has neither, and
-no Docker or WSL. Options:
-- (a) install Docker Desktop and use `docker-compose.yml`, or
-- (b) run a native Redis (e.g. Memurai) with the embedded Postgres.
+## S2 exit criteria on the real workbook (2026-09-18, two sheets watched)
+Stack: docker compose Postgres 16 and Redis 7, the migration applied, the watcher and RQ
+worker running on the host. Both sheets were registered with the owner's approval.
+- [x] **A burst of edits gives exactly 1 run, and the other sheet is never touched.**
+  Status edits → `run_20260918T072038_159a4506` and later `run_20260918T081942_810a250f`,
+  each about 31s after the change was seen. Sheet 2 had no runs at all.
+- [x] **Our own writes never re-trigger a run.** Found and fixed a gap in PATCH-002 A.3: see
+  DECISIONS, "S2 live findings". After the fix, both of Drive's change records for our write
+  were ignored and no no-op run followed.
+- [x] **A renamed header gives PAUSED_DRIFT with nothing written.**
+  `run_20260918T083053_ce9659fc` recorded the drift event on MACHINES; sheet 2 stayed ACTIVE.
+- [x] **`resume` refuses while drifted and recovers once the header is restored.** The
+  follow-up runs were NOOPs.
+- [x] **`undo` restores the prior values exactly.** `run_20260918T083549_e3b8f639` undid
+  `run_20260918T081942_810a250f`; MACHINES and SUMMARY match the snapshot in both values and
+  formats. The undo's own write was ignored.
 
-The live criteria also need a **second enrolled sheet**, because PATCH-002 A.5 requires the
-tests to run with at least two sheets watched.
-
-Must be verified live (a fake can't prove these):
-- Files shared with the service account appear in its Drive changes feed.
-- How far `modifiedTime` lags behind our own write.
+Open for the owner: confirm the author-based self-write filter (a deviation from A.3's
+literal mechanism).
 
 ## PARTLY RESOLVED: consolidate `presentation`
 Title and header colours are now applied by the evaluator. What follows is the remaining question.
