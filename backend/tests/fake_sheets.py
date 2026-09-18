@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.adapters.sheets_adapter import date_to_serial
@@ -57,6 +57,7 @@ class FakeSheetsService:
         self.docs = spreadsheets
         self.calls: list[tuple[str, str]] = []  # (method, spreadsheet id)
         self.fail_next_batch = False
+        self.on_commit: Any = None  # FakeDriveService hook: a committed write bumps modifiedTime
 
     def spreadsheets(self) -> FakeSheetsService:
         return self
@@ -118,6 +119,8 @@ class FakeSheetsService:
             (kind, arg), = req.items()
             getattr(self, "_" + kind)(work, arg)
         self.docs[sid] = work  # atomic: only now does the change become visible
+        if self.on_commit is not None:
+            self.on_commit(sid)
         return {"replies": [{} for _ in requests]}
 
     @staticmethod
@@ -257,3 +260,84 @@ def seed(workbook: Workbook, time_zone: str = "Asia/Kolkata", date_pattern: str 
             sh.protected.append({"protectedRangeId": 1 + i, "range": {"sheetId": sh.sheet_id}})
         doc.sheets.append(sh)
     return doc
+
+
+# ---- Drive changes feed + clock (S2) -------------------------------------------------------
+
+
+class FakeClock:
+    def __init__(self, start: datetime) -> None:
+        self.now = start
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> datetime:
+        self.now = self.now + timedelta(seconds=seconds)
+        return self.now
+
+
+class FakeDriveService:
+    """changes.getStartPageToken / changes.list / files.get(modifiedTime) over a FakeSheetsService.
+
+    Every committed batchUpdate (ours) and every `user_edit` bumps the file's modifiedTime
+    (1 ms resolution like Drive) and appends a change.
+    """
+
+    def __init__(self, sheets: FakeSheetsService, clock: FakeClock) -> None:
+        self.sheets = sheets
+        self.clock = clock
+        self.log: list[dict[str, Any]] = []
+        self.modified: dict[str, datetime] = {}
+        self.calls: list[str] = []
+        self.unrelated_files: list[str] = []
+        sheets.on_commit = self._bump
+
+    def _bump(self, file_id: str) -> None:
+        t = self.clock()
+        prev = self.modified.get(file_id)
+        if prev is not None and t <= prev:
+            t = prev + timedelta(milliseconds=1)
+        self.modified[file_id] = t
+        stamp = t.isoformat().replace("+00:00", "Z")
+        self.log.append({"fileId": file_id, "time": stamp, "file": {"modifiedTime": stamp}})
+
+    def user_edit(self, file_id: str, tab: str, row: int, col: int, value: Any) -> None:
+        """A human edits one cell (1-based) in the sheet UI."""
+        sheet = next(s for s in self.sheets.docs[file_id].sheets if s.title == tab)
+        cell = sheet.cells.setdefault((row - 1, col - 1), {})
+        if value is None or value == "":
+            cell.pop("userEnteredValue", None)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            cell["userEnteredValue"] = {"numberValue": float(value)}
+        else:
+            cell["userEnteredValue"] = {"stringValue": str(value)}
+        self._bump(file_id)
+
+    def unrelated_change(self, file_id: str) -> None:
+        self._bump(file_id)
+
+    # -- API surface --
+    def changes(self) -> FakeDriveService:
+        return self
+
+    def files(self) -> FakeDriveService:
+        return self
+
+    def getStartPageToken(self, **_: Any) -> _Request:
+        return _Request(lambda: (self.calls.append("changes.getStartPageToken"),
+                                 {"startPageToken": str(len(self.log))})[1])
+
+    def list(self, pageToken: str, **_: Any) -> _Request:  # changes.list
+        def run() -> dict[str, Any]:
+            self.calls.append("changes.list")
+            start = int(pageToken)
+            return {"changes": copy.deepcopy(self.log[start:]), "newStartPageToken": str(len(self.log))}
+        return _Request(run)
+
+    def get(self, fileId: str, fields: str = "", **_: Any) -> _Request:  # files.get
+        def run() -> dict[str, Any]:
+            self.calls.append("files.get")
+            t = self.modified.get(fileId, datetime(2026, 1, 1, tzinfo=UTC))
+            return {"modifiedTime": t.isoformat().replace("+00:00", "Z")}
+        return _Request(run)
