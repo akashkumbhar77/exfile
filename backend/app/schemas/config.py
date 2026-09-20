@@ -529,6 +529,11 @@ class Guards(_Strict):
         default=True, description="Always true: destructive rules snapshot first (invariant 6)."
     )
     hold_column: Annotated[str, Field(min_length=1)] = "!hold"
+    backup_tab: bool = Field(
+        default=False,
+        description="Generated scripts only: copy affected rows to a hidden _backup tab before a "
+                    "destructive rule. Forced on there (PATCH-005 I.7); it is not a snapshot.",
+    )
 
 
 class ConfigSpec(_Strict):

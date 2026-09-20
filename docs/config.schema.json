@@ -947,6 +947,12 @@
     "Guards": {
       "additionalProperties": false,
       "properties": {
+        "backup_tab": {
+          "default": false,
+          "description": "Generated scripts only: copy affected rows to a hidden _backup tab before a destructive rule. Forced on there (PATCH-005 I.7); it is not a snapshot.",
+          "title": "Backup Tab",
+          "type": "boolean"
+        },
         "hold_column": {
           "default": "!hold",
           "minLength": 1,
