@@ -1,3 +1,5 @@
+> **Stale:** this describes the parked managed-tier API as tagged in `v0-managed-tier`. The product pivoted in SPEC-PATCH-005; this file is rewritten at P3.
+
 # PATCH-003 page fields → API (audit, 2026-09-18)
 
 This walks through every field that SPEC-PATCH-003 section B puts on screen and lists the
