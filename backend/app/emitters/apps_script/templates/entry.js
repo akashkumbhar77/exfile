@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------- entry point
 
 /**
- * Applies every rule above, in order, to each governed tab.
+ * Applies every rule above, in order.
  *
  * Nothing is touched until every governed tab's header row still matches the fingerprint taken
  * when this script was generated. If any of them changed, the whole run stops and says so,
@@ -34,6 +34,7 @@ function ${entry_point}() {
     return;
   }
 
+  // Per-tab rules first, so the tabs a summary reads from are already in order.
   for (var v = 0; v < views.length; v++) {
     var view = views[v];
     var name = view.name;
@@ -41,6 +42,8 @@ function ${entry_point}() {
 
 ${calls}
   }
+
+${workbook_calls}
   report_(notes);
 }
 

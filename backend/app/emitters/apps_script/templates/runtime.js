@@ -93,21 +93,25 @@ function holdIsSet_(value) {
   return t !== '' && t !== 'FALSE' && t !== 'NO' && t !== '0';
 }
 
-/** Columns are found by header text, never by position. */
-function buildView_(sheet) {
+/** Columns are found by header text, never by position.
+ *  `raw` skips canonical matching, for a tab this script generated (its headers are already
+ *  canonical, and re-matching them could rename a column). */
+function buildView_(sheet, raw) {
   var lastCol = sheet.getLastColumn();
   var headers = lastCol ? sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0] : [];
-  var cols = {}, holdIdx = -1;
+  var cols = {}, holdIdx = -1, order = [];
   for (var i = 0; i < headers.length; i++) {
     if (cellText_(headers[i]).trim() === '') continue;
     if (normText_(headers[i]) === HOLD_COLUMN) { if (holdIdx < 0) holdIdx = i; continue; }
-    var key = canonicalHeader_(headers[i]).trim().toUpperCase();
+    var name = raw ? cellText_(headers[i]).trim() : canonicalHeader_(headers[i]).trim();
+    var key = name.toUpperCase();
+    order.push({ at: i, key: key, name: name });   // every column, in sheet order
     if (!(key in cols)) cols[key] = i;   // first matching column wins
   }
   var lastRow = sheet.getLastRow();
   var count = Math.max(0, lastRow - DATA_START_ROW + 1);
   return {
-    sheet: sheet, name: sheet.getName(), cols: cols, holdIdx: holdIdx, lastCol: lastCol,
+    sheet: sheet, name: sheet.getName(), cols: cols, order: order, holdIdx: holdIdx, lastCol: lastCol,
     headers: headers, rowCount: count,
     values: count ? sheet.getRange(DATA_START_ROW, 1, count, lastCol).getValues() : []
   };
@@ -194,4 +198,31 @@ function numLte_(a, b) { return a !== null && b !== null && a <= b; }
 function numBetween_(a, lo, hi) { return a !== null && lo !== null && hi !== null && a >= lo && a <= hi; }
 function numNotBetween_(a, lo, hi) {
   return a !== null && lo !== null && hi !== null && !(a >= lo && a <= hi);
+}
+
+/** True when every cell in the row is blank. */
+function rowIsEmpty_(row) {
+  for (var i = 0; i < row.length; i++) if (!isEmpty_(row[i])) return false;
+  return true;
+}
+
+/** The target tab of a consolidate rule, created in first position if this is the first run
+ *  (where the server engine puts it, so both targets end up with the same tab order). */
+function targetSheet_(ss, name) {
+  var sheet = ss.getSheetByName(name);
+  return sheet ? sheet : ss.insertSheet(name, 0);
+}
+
+/** Locks the tab against hand edits: it is rebuilt from its sources every run, so an edit
+ *  made here would be silently overwritten. The rest of the spreadsheet stays editable. */
+function lockTab_(sheet) {
+  var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  if (!existing.length) sheet.protect().setDescription(PRODUCT + ': rebuilt automatically');
+}
+
+/** An array of `n` copies of one value, for the batched style setters. */
+function fillArray_(n, value) {
+  var out = [];
+  for (var i = 0; i < n; i++) out.push(value);
+  return out;
 }

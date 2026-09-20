@@ -37,10 +37,11 @@ def refusals(config: ConfigSpec) -> list[tuple[str, str]]:
 
 
 def test_a_refused_rule_stops_the_whole_script() -> None:
-    config = ConfigSpec.model_validate(load_reference_raw())  # includes consolidate
+    """The reference consolidate rule emits; its debounced trigger does not, and that is enough
+    to withhold the whole script rather than ship one that quietly never runs that rule."""
+    config = ConfigSpec.model_validate(load_reference_raw())
     codes = refusals(config)
-    # both reasons for the same rule: the action and its debounced trigger are separate gaps
-    assert codes == [("/rules/2", "unsupported_action"), ("/rules/2/trigger", "unsupported_trigger")]
+    assert codes == [("/rules/2/trigger", "unsupported_trigger")]
     assert "not emitted yet" in emit(config).refusals[0].message
 
 

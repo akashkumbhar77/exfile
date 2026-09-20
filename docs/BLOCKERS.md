@@ -56,6 +56,14 @@ look. Two options:
 - (a) add it as S1/S2 work: new GridOps for column widths, banding and number formats
 - (b) park it
 
+**Sharpened by the emitter (2026-09-20).** The Apps Script target could apply banding, widths
+and date formats easily - Apps Script has direct APIs for all three. It deliberately does not.
+The evaluator is the oracle, and it does not model them, so anything the script did here would
+be behaviour no parity run can check: exactly the "an emitter never invents" line in PATCH-004
+A.3. So the gap is now a schema/oracle question, not a target question: either the evaluator
+learns these three (and the emitter follows), or they leave `Presentation`. Until then the
+generated SUMMARY has legacy's colours but not its widths or banding.
+
 ## Note: Engine.gs is still in the repo
 `engine/` and its tests still run (Node) but aren't used at runtime. Deleting them is a
 separate decision for the owner.

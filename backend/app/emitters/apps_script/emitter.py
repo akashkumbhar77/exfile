@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from string import Template
+from typing import Any
 
 from app.emitters import capabilities
 from app.schemas.config import (
@@ -26,6 +27,7 @@ from app.schemas.config import (
     CellFormatRule,
     Condition,
     ConfigSpec,
+    ConsolidateRule,
     DateCondition,
     EnumCondition,
     EnumSpec,
@@ -47,6 +49,7 @@ from app.schemas.config import (
     SortKey,
     SortRule,
     Style,
+    TabSelector,
 )
 from app.services.describe import (
     Scope,
@@ -143,6 +146,10 @@ class Columns:
 
     def present(self, column: str) -> str:
         return f"{self.var(column)} !== undefined"
+
+    def mapping(self) -> dict[str, str]:
+        """canonical column key -> the JS variable holding its index."""
+        return dict(self._vars)
 
 
 WIDTH = 108
@@ -363,14 +370,98 @@ def _cell_note(cr: CellFormatRule) -> str:
 # ---------------------------------------------------------------- assembly
 
 
-def _selector_js(rule: SortRule | FormatRule) -> tuple[str, str]:
+def _selector_js(selector: TabSelector, name_var: str = "name") -> tuple[str, str]:
     """(JS test for 'does this rule apply to this tab', human note for the comment)."""
-    selector = rule.tabs
     if isinstance(selector, str):  # all_with:COLUMN
         column = canon_key(selector.split(":", 1)[1])
         return f"{js_string(column)} in view.cols", f"every governed tab with a {column} column"
-    tests = " || ".join(f"name === {js_string(name)}" for name in selector)
+    tests = " || ".join(f"{name_var} === {js_string(tab)}" for tab in selector)
     return f"({tests})", "tabs " + ", ".join(selector)
+
+
+def consolidate_sorting(rule: ConsolidateRule, config: ConfigSpec) -> str:
+    """`sort_like`: the same keys again, resolved against the consolidated header row."""
+    sort_rule = config.rule(rule.sort_like) if rule.sort_like else None
+    if not isinstance(sort_rule, SortRule):
+        return "  // no sort_like rule: rows stay in the order their source tabs are in"
+    cols = Columns()
+    comparisons = sort_comparisons(sort_rule.keys, cols)
+    lookups = "\n".join(
+        f"  var {var} = at[{js_string(key)}] === undefined ? undefined : leading.length + at[{js_string(key)}];"
+        for key, var in cols.mapping().items())
+    return "\n".join([
+        f"  // sorted like rule {sort_rule.id!r}, on the consolidated columns",
+        lookups,
+        "  var indexed = [];",
+        "  for (var s = 0; s < rows.length; s++) indexed.push({ row: rows[s], at: s });",
+        "  indexed.sort(function (a, b) {",
+        "    var d = 0;",
+        comparisons,
+        "    return a.at - b.at;",
+        "  });",
+        "  rows = [];",
+        "  for (var s2 = 0; s2 < indexed.length; s2++) rows.push(indexed[s2].row);",
+    ])
+
+
+def consolidate_title(rule: ConsolidateRule, config: ConfigSpec) -> str:
+    """PATCH-003 decision (c) and its addendum: the owner's title, or the banner already there."""
+    if config.header_row <= 1:
+        return "  // there is no banner row above the headers"
+    p = rule.presentation
+    if p.title:
+        return (f"  sheet.getRange(1, 1).setValue({js_string(p.title)})\n"
+                f"       .setFontColor({js_string(p.title_font.upper())})"
+                f".setBackground({js_string(p.title_background.upper())});")
+    return "\n".join([
+        "  if (!isEmpty_(banner.value)) {           // no title set: keep the banner already there",
+        "    var kept = sheet.getRange(1, 1);",
+        "    kept.setValues([[banner.value]]);",
+        "    kept.setFontColors([[banner.font]]);",
+        "    kept.setBackgrounds([[banner.background]]);",
+        "  }",
+    ])
+
+
+def consolidate_function(rule: ConsolidateRule, config: ConfigSpec, common: dict[str, Any]) -> str:
+    derived = "\n".join(
+        f"  if (!({js_string(canon_key(d.name))} in at)) {{ at[{js_string(canon_key(d.name))}] = "
+        f"headers.length; headers.push({js_string(d.name)}); }}"
+        for d in rule.derived)
+    fill_in = "\n".join(
+        f"      if (isEmpty_(out[at[{js_string(canon_key(d.name))}]])) "
+        f"out[at[{js_string(canon_key(d.name))}]] = from.name.trim();"
+        for d in rule.derived)
+    selector, _ = _selector_js(rule.sources)
+    return fill(
+        "consolidate.js", headline=common["headline"], when=common["when"], fn=common["fn"],
+        rule_id=rule.id, target=js_string(rule.target_tab), selector=selector,
+        derived_columns=derived or "  // no derived columns",
+        derived_fill=fill_in or "      // no derived columns",
+        prepend_names="[" + ", ".join(js_string(p.name) for p in rule.prepend_columns) + "]",
+        sorting=consolidate_sorting(rule, config), title=consolidate_title(rule, config),
+        header_font=js_string(rule.presentation.header_font.upper()),
+        header_background=js_string(rule.presentation.header_background.upper()),
+        data_start=config.data_start_row,
+        locking="  lockTab_(sheet);" if rule.lock else "  // this target is left unlocked",
+        formatting=_consolidate_formatting(rule, config),
+    )
+
+
+def _consolidate_formatting(rule: ConsolidateRule, config: ConfigSpec) -> str:
+    """`format_like`: the same colouring rule, applied to the rebuilt target."""
+    format_rule = config.rule(rule.format_like) if rule.format_like else None
+    if not isinstance(format_rule, FormatRule):
+        return "  // no format_like rule: the rows keep the plain style"
+    return "\n".join([
+        f"  // coloured like rule {format_rule.id!r}",
+        f"  var painted = {rule_fn(format_rule.id)}(buildView_(sheet, true), today);",
+        "  if (painted && painted.rowsAffected) {",
+        "    painted.range.setFontColors(painted.fonts);",
+        "    painted.range.setBackgrounds(painted.fills);",
+        "    painted.range.setFontLines(painted.lines);",
+        "  }",
+    ])
 
 
 def _stage_functions(config: ConfigSpec, used: set[str]) -> list[str]:
@@ -439,14 +530,15 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
     described = {r.id: r for r in describe_config(config, workbook).rules}
     functions: list[str] = []
     calls: list[str] = []
+    workbook_calls: list[str] = []
     enums_used: set[str] = set()
 
     for rule in config.rules:
         # capabilities.check_config already refused everything else, so this holds
-        assert isinstance(rule, (SortRule, FormatRule)), rule.action
+        assert isinstance(rule, (SortRule, FormatRule, ConsolidateRule)), rule.action
         text = described[rule.id]
         cols = Columns()
-        selector, tab_note = _selector_js(rule)
+        selector, tab_note = _selector_js(rule.sources if isinstance(rule, ConsolidateRule) else rule.tabs)
         var_name = f"plan{text.number}"
         common = {"number": text.number,
                   "headline": wrap_comment(f"Rule {text.number}: {text.headline}", " * ", " *   ")[3:],
@@ -458,6 +550,11 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
             functions.append(fill("sort.js", columns=cols.declarations(), comparisons=comparisons, **common))
             calls.append(fill("sort_call.js", number=text.number, rule_id=rule.id, tab_note=tab_note,
                               selector=selector, var_name=var_name, fn=rule_fn(rule.id)))
+        elif isinstance(rule, ConsolidateRule):
+            enums_used |= _enums_in_consolidate(rule, config)
+            functions.append(consolidate_function(rule, config, common))
+            workbook_calls.append(fill("consolidate_call.js", number=text.number, rule_id=rule.id,
+                                       tab_note=tab_note, var_name=var_name, fn=rule_fn(rule.id)))
         else:
             body = format_body(rule, cols)
             enums_used |= _enums_in_format(rule)
@@ -472,10 +569,23 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
         _canonical_function(config),
         *_stage_functions(config, enums_used),
         *functions,
-        fill("entry.js", entry_point=ENTRY_POINT, calls="\n".join(calls).rstrip("\n")),
+        fill("entry.js", entry_point=ENTRY_POINT, calls="\n".join(calls).rstrip("\n"),
+             workbook_calls="\n".join(workbook_calls).rstrip("\n") or "  // no workbook-wide rules"),
         _config_comment(config, scope),
     ]
     return EmitResult(capabilities.TARGET, "\n\n".join(p.strip("\n") for p in parts) + "\n", [])
+
+
+def _enums_in_consolidate(rule: ConsolidateRule, config: ConfigSpec) -> set[str]:
+    """A consolidate rule borrows another rule's sort keys and colours, and their enums with them."""
+    found: set[str] = set()
+    sort_rule = config.rule(rule.sort_like) if rule.sort_like else None
+    if isinstance(sort_rule, SortRule):
+        found |= {k.using_enum for k in sort_rule.keys if k.using_enum is not None}
+    format_rule = config.rule(rule.format_like) if rule.format_like else None
+    if isinstance(format_rule, FormatRule):
+        found |= _enums_in_format(format_rule)
+    return found
 
 
 def _enums_in_format(rule: FormatRule) -> set[str]:

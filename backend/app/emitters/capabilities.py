@@ -50,7 +50,7 @@ def _later(note: str) -> Support:
 ACTIONS: dict[str, Support] = {
     "sort": _YES,
     "format": _YES,
-    "consolidate": _later("S7b; single file, cross-tab only"),
+    "consolidate": _YES,   # single file, cross-tab; a target is never a source
     "validate": _later("S7b"),
     "dedupe": _later("S7b"),
     "clear": _later("S7b"),
@@ -67,7 +67,7 @@ DESTRUCTIVE_ACTIONS = frozenset({"move", "clear", "dedupe"})
 TRIGGERS: dict[str, Support] = {
     "on_edit": _YES,
     "after": _YES,
-    "debounced": _later("S7b; dirty flag + time trigger"),
+    "debounced": _later("S7b; needs the dirty flag + time trigger"),
     # PATCH-005 I.7: time-driven triggers are native to Apps Script, hourly or coarser.
     "schedule": _later("S7b; hourly granularity or coarser, in the script's own timezone"),
 }

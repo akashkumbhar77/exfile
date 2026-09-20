@@ -130,6 +130,28 @@ def test_held_rows_are_untouched_by_the_generated_script() -> None:
     compare_grids(py.workbook, response, config.header_row, "held rows")
 
 
+def test_the_full_reference_config_including_consolidate_matches() -> None:
+    """The SUMMARY tab the legacy script built: union headers, prepended source, locked target.
+
+    The reference config triggers its consolidate on a debounce, which needs the trigger wiring
+    (dirty flag + time trigger) that is still unemitted; the rule itself is the same either way,
+    so here it hangs off the format rule instead. The debounced form emits once triggers land.
+    """
+    raw = load_reference_raw()
+    raw["rules"][2]["trigger"] = {"after": "status_formatting"}
+    config = ConfigSpec.model_validate(raw)
+    workbook = reference_workbook.build()
+    result = emit(config, workbook=workbook)
+    assert result.ok and result.script is not None, [r.message for r in result.refusals]
+
+    py = execute_run(config, workbook, RunEvent.manual(), EvalContext(run_id="cons", today=TODAY))
+    assert py.plan.status == "OK"
+    response = run_generated(result.script, workbook)
+    compare_grids(py.workbook, response, config.header_row, "reference with consolidate")
+    target = next(t for t in response["tabs"] if t["name"] == "SUMMARY")
+    assert target["protected"] is True, "the rebuilt summary must be locked"
+
+
 def test_a_renamed_header_stops_the_whole_run_in_both_targets() -> None:
     """Invariant 4 parity: one drifted tab pauses everything, it does not organise the others."""
     config, workbook, script = None, reference_workbook.build(), None

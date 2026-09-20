@@ -179,6 +179,7 @@ function runRequest(req) {
     props: env.props(),
     fetches: env.fetches(),
     calls: JSON.parse(JSON.stringify(env.mock.calls)),
+    toasts: env.toasts(),
     logs: env.logs,
   };
 }
