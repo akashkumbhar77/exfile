@@ -155,7 +155,7 @@ function visibleTabs(dump) {
 }
 
 function runRequest(req) {
-  const env = createEnv({ script: req.script, now: req.now });
+  const env = createEnv({ script: req.script, now: req.now, scriptSource: req.scriptSource });
   env.load(req.workbook);
   const results = [];
   for (const step of req.steps || []) {
