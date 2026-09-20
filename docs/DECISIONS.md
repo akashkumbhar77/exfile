@@ -837,3 +837,40 @@ Minimal shapes for actions the SPEC names but doesn't specify:
 - **Not included in the tag:** numeric conditions (branch `s7-numeric-conditions`, commit
   `2cec203`) and the S7a emitter work in progress. Both survive the pivot, so they belong on
   `main` rather than in the parked snapshot.
+
+### PATCH-005 amendments: the seven review findings (owner rulings, 2026-09-20)
+Each was raised in the pre-pivot review and accepted; they are now section I of the patch.
+
+1. **P4's Google dependency is test-only and fenced.** The live release gate has to read a real
+   test spreadsheet back, which needs the adapter read path and a service account - both on C's
+   parking list. They stay, in a test-only module behind the `live_gs` marker, with a test
+   asserting no product module imports them. Without the fence, "test-only" decays.
+2. **`engine/test/` and `engine/reference/legacy.gs` are protected proof infrastructure.** The
+   Apps Script mock is already anchored to the legacy golden files, which is why the offline
+   parity harness retargets it instead of introducing a second fake: two independent fakes can
+   share the same wrong assumption, and only one of them is tied to known-good output.
+3. **P1.5, the .xlsx reader, is its own milestone** with explicit exit criteria (values, fills,
+   font colours, strikethrough, merged cells, and the reference workbook's year-95637 date and
+   headerless column read without crashing).
+   - **Timezone is explicit input.** An .xlsx carries none and the preview needs one, so it is a
+     CLI flag and a UI selector defaulting to the browser's zone, printed in the preview header
+     ("overdue as of 20 Sep 2026, Asia/Kolkata"). Never inferred silently, because "overdue"
+     changes meaning with the zone.
+4. **G states the preview-fidelity limit:** the preview runs on the file as uploaded; a live
+   sheet may hold formulas, filters, conditional formatting, data validation or another
+   timezone, and can differ.
+5. **No server-side config storage, as a constraint.** The config is derived from user data
+   (header text and enum labels can be client names), so "we keep nothing" holds only if we
+   store none of it. A future "save your config" feature must change the claim first.
+6. **Session state:** memory only, no disk, hard TTL, maximum upload size, evicted on expiry
+   whether or not the user returns.
+7. **Two capability calls settled**, amending PATCH-004 B:
+   - **move/copy within one file are supported**, because "move completed rows to Archive" is
+     among the most common asks and never crosses files. **A destructive rule (move, clear,
+     dedupe) forces `backup_tab` on** in this tier, overriding D.5's default-off: with no
+     snapshots, the backup tab is the only undo there is, so it cannot be optional.
+   - **`schedule` triggers are supported at hourly granularity or coarser**, in the script's own
+     timezone; anything finer is refused. Apps Script does time-driven triggers natively and
+     "every night, archive dispatched rows" is a top-three instruction.
+8. **Clause coverage stays a mechanical diff** (D.2), not a second model call - the same
+   conclusion the sheet-4 forensics pointed to.

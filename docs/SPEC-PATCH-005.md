@@ -1,6 +1,7 @@
 # SPEC-PATCH-005.md — Pivot: script generator only
 
-Read after CLAUDE.md, SPEC.md, PATCH-001/002/003/004. Where this
+Read after CLAUDE.md, SPEC.md, PATCH-001/002/003/004, and section I
+(owner amendments, 2026-09-20), which wins within this patch. Where this
 conflicts with any of them, THIS PATCH WINS. It narrows the product to
 one feature and parks the rest. Nothing here is deleted; everything
 parked stays in git, tagged, and can be revived by a later patch.
@@ -114,3 +115,40 @@ Recurring managed value, fleet visibility, cross-file rules, and the
 managed tier's upgrade story. If those are wanted later, `v0-managed-tier`
 is the starting point and the config schema is unchanged, so the parked
 work still fits.
+
+## I. Amendments (owner rulings, 2026-09-20)
+
+These arose from the pre-pivot review and carry the same authority as the rest of this patch.
+
+1. **P4's Google dependency is test-only, and fenced.** The sheets adapter read path, the
+   service account and `google_http` are kept so the live proof can read a test spreadsheet
+   back. They live in a test-only module, run behind the `live_gs` marker, and a test asserts
+   that no product module imports them. The fence is what keeps "test-only" true later.
+2. **Proof infrastructure is never parked.** `engine/test/` (the harness and the Apps Script
+   mock) and `engine/reference/legacy.gs` are proof infrastructure, not retired code. They are
+   never parked and never "cleaned up". The mock is already anchored to the legacy golden
+   files, so retargeting it at generated scripts is what makes the offline parity meaningful;
+   a second, independent fake could share a wrong assumption with the emitter.
+3. **P1.5: the .xlsx reader gets its own milestone.** Exit criteria: values, fills, font
+   colours, strikethrough, merged cells, and the reference workbook's two known bad cells (the
+   year-95637 date and the headerless column) read without crashing.
+   - **Timezone is explicit input, never inferred.** The preview needs one and an .xlsx carries
+     none: a CLI flag and a UI selector defaulting to the browser's zone. The preview header
+     states it, e.g. "overdue as of 20 Sep 2026, Asia/Kolkata".
+4. **G gains a preview-fidelity limit:** the preview runs on the file as uploaded. A live sheet
+   may hold formulas, filters, conditional formatting, data validation or a different timezone,
+   and results can differ there.
+5. **No server-side config storage.** The config goes to the user with the script and is kept
+   nowhere else. This is a constraint, not a note: a future "save your config" feature must
+   change the public claim before it is built.
+6. **Session state for the revise loop:** memory only, never disk, a hard TTL, and a maximum
+   upload size. Sessions are evicted when the TTL expires whether or not the user returns.
+7. **Two capability calls settled (amending PATCH-004 B):**
+   - **`move` / `copy` within the same file are supported.** "Move completed rows to Archive"
+     is in-file, so the cross-file refusal does not apply.
+     - **Because this tier has no undo, a config containing a destructive rule (move, clear,
+       dedupe) forces `backup_tab` on.** This overrides PATCH-004 D.5's default-off for those
+       rules; the emitter refuses a destructive rule with the backup off.
+   - **`schedule` triggers are supported at hourly granularity or coarser**, using the script's
+     own timezone. Anything finer than hourly is refused.
+8. **D.2 stands as written:** clause coverage is a mechanical diff, not a second model call.
