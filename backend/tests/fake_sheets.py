@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from app.adapters.sheets_adapter import date_to_serial
+from tests.live.sheets_adapter import date_to_serial
 from app.services.grid import CellFormat, Workbook, is_empty
 
 

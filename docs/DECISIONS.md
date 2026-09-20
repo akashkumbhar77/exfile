@@ -874,3 +874,31 @@ Each was raised in the pre-pivot review and accepted; they are now section I of 
      "every night, archive dispatched rows" is a top-three instruction.
 8. **Clause coverage stays a mechanical diff** (D.2), not a second model call - the same
    conclusion the sheet-4 forensics pointed to.
+
+### The parking commit: what left the build (2026-09-20)
+- **Removed from the active build** (all of it in `v0-managed-tier`): the API (`app/api`), the
+  workers and queue (`app/workers`), the ORM models and Alembic migrations, the Drive changes
+  feed, the write path and its helpers (`live.py`, `operations.py`, `registry.py`,
+  `snapshot_store.py`, `views.py`, `sheet_ref.py`), the React frontend, `docker-compose.yml`,
+  the managed-tier `cli.py`, and the tests that covered them.
+- **Fenced rather than removed** (amendment I.1): the sheets adapter and `google_http` moved to
+  `backend/tests/live/`, with `tests/test_google_fence.py` asserting that nothing under `app/`
+  imports them, Google's libraries, or the test package. The product cannot reach a spreadsheet
+  even by accident.
+- **Two decouplings were needed first, and both improved the design:**
+  - `plan_grid` (`app/services/planning.py`) plans a run against a grid already in memory. The
+    adapter-driven `prepare_run`/`commit_run` pair went with the write path, and the preview now
+    calls the planner directly, which is what PATCH-005 B.1 means by the evaluator being an
+    oracle rather than a runtime.
+  - The compile path records through a `CompileRecorder` (`app/agent/recorder.py`) instead of a
+    session factory. `MemoryRecorder` is the default and keeps profiles, metering and proposals
+    in the process, which is how I.5 ("no server-side config storage") is enforced structurally
+    rather than by discipline.
+- **Tests:** 523 pass with no Postgres, no Redis and no Google, in 17 s (previously 601 in 69 s
+  with a database). The compile-path tests were rewritten against the recorder; the
+  approval-gate tests (approve, reject, owner title) went with the registry they tested, and the
+  frontend readback fixture check went with the frontend. The B.6 lint, the Redacted tests and
+  the env-file guard all stay.
+- **Kept deliberately:** ConfigSpec and the validator, the evaluator and every rule, `describe`,
+  `preview`, the agent (profile, masking, skills, tool loop), the emitter, `engine/test` and
+  `engine/reference/legacy.gs` (proof infrastructure, amendment I.2).

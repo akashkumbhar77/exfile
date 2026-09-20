@@ -36,7 +36,7 @@ from app.adapters.base import (
     WriteResult,
     WriteValues,
 )
-from app.adapters.google_http import ThreadHttp, execute
+from tests.live.google_http import ThreadHttp, execute
 from app.services.grid import (
     CellFormat,
     CellValue,

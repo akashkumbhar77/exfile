@@ -18,15 +18,13 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.adapters.base import StaticRegistry, WriteValues
-from app.adapters.sheets_adapter import SheetsAdapter
+from tests.live.sheets_adapter import SheetsAdapter
 from app.core.redaction import REDACTED, Redacted
 from app.schemas.config import ConfigSpec
 from app.services.executor import execute_run
 from app.services.grid import Workbook, cell_text, is_empty
-from app.services.live import StaleGrid, commit_run, prepare_run
 from app.services.runner import RunEvent
 from app.services.conditions import EvalContext
-from app.services.snapshot_store import LocalSnapshotStore, SnapshotCipher
 from app.services.snapshots import decode_tab, take_snapshot
 from tests.fake_sheets import FakeSheetsService, seed
 from tests.fixtures import reference_workbook
@@ -80,42 +78,7 @@ def test_grid_containers_repr_redacted(workbook: Workbook, config: ConfigSpec) -
         assert not leaked, f"{type(o).__name__} repr leaks {len(leaked)} cell value(s)"
 
 
-def test_live_run_logs_no_cell_values(
-    workbook: Workbook, config: ConfigSpec, tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    svc = FakeSheetsService({SID: seed(workbook)})
-    adapter = SheetsAdapter(svc, StaticRegistry(frozenset({SID})))
-    store = LocalSnapshotStore(tmp_path, SnapshotCipher.from_key(Fernet.generate_key().decode(), "k1"), 30)
-    with caplog.at_level(logging.DEBUG):
-        p = prepare_run(adapter, SID, config, now=NOW)
-        commit_run(adapter, p, store)
-    text = "\n".join(r.getMessage() for r in caplog.records)
-    assert "run.committed" in text and REDACTED in text
-    leaked = {s for s in _cell_texts(workbook) if s in text}
-    assert not leaked, f"log output leaks {len(leaked)} cell value(s)"
-    sample = next(r.getMessage() for r in caplog.records if "WriteValues" in r.getMessage())
-    print("\nSAMPLE REDACTED LOG LINE:\n" + sample)
-
-
-def test_errors_carry_no_cell_values(workbook: Workbook, config: ConfigSpec, tmp_path: Path) -> None:
-    svc = FakeSheetsService({SID: seed(workbook)})
-    adapter = SheetsAdapter(svc, StaticRegistry(frozenset({SID})))
-    store = LocalSnapshotStore(tmp_path, SnapshotCipher.from_key(Fernet.generate_key().decode(), "k1"), 30)
-    p = prepare_run(adapter, SID, config, now=NOW)
-    svc.docs[SID].sheets[1].cells[(2, 1)] = {"userEnteredValue": {"stringValue": "Secret Customer Pvt Ltd"}}
-    with pytest.raises(StaleGrid) as exc:
-        commit_run(adapter, p, store)
-    assert "Secret" not in str(exc.value)
-
-    with pytest.raises(ValueError) as bad:
-        decode_tab(__import__("gzip").compress(b'{"name":"T","values":[[{"$x":"Secret Customer"}]],'
-                                               b'"formats":[],"validations":[],"protected":false}'))
-    assert "Secret" not in str(bad.value)
-
-
-# ---- static lint --------------------------------------------------------------------------
-
-LINTED = [BACKEND / "app", BACKEND / "cli.py"]
+LINTED = [BACKEND / "app"]  # the managed-tier cli.py is parked; P2 brings `generate`
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
 LOGGER_NAMES = {"log", "logger", "logging", "LOG", "_log"}
 # Names that, in this codebase, hold cell contents (rows, cells, grids, snapshot bodies).

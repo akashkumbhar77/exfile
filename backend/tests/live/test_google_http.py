@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from app.adapters.google_http import ThreadHttp, execute
+from tests.live.google_http import ThreadHttp, execute
 
 
 class _Creds:  # minimal stand-in: AuthorizedHttp only stores it until a request is made
@@ -43,23 +43,6 @@ def test_reads_retry_and_writes_never_do() -> None:
 def test_writes_in_the_adapter_pass_zero_retries() -> None:
     from pathlib import Path
 
-    src = (Path(__file__).resolve().parents[1] / "app" / "adapters" / "sheets_adapter.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parent / "sheets_adapter.py").read_text(encoding="utf-8")
     call = src[src.index("batchUpdate(spreadsheetId=source_ref"):]
     assert "retries=0" in call[: call.index("\n\n")]
-
-
-def test_upstream_failures_map_to_clear_envelopes() -> None:
-    from googleapiclient.errors import HttpError
-
-    from app.api.errors import classify_upstream
-
-    class _Resp(dict):  # type: ignore[type-arg]
-        def __init__(self, status: int) -> None:
-            super().__init__()
-            self.status, self.reason = status, "x"
-
-    assert classify_upstream(TimeoutError("read timed out"))[:2] == (503, "google_unavailable")  # type: ignore[index]
-    assert classify_upstream(HttpError(_Resp(403), b"{}"))[:2] == (403, "sheet_forbidden")  # type: ignore[index]
-    assert classify_upstream(HttpError(_Resp(404), b"{}"))[:2] == (404, "sheet_not_found")  # type: ignore[index]
-    assert classify_upstream(HttpError(_Resp(500), b"{}"))[:2] == (503, "google_unavailable")  # type: ignore[index]
-    assert classify_upstream(ValueError("our bug")) is None  # still a generic internal error

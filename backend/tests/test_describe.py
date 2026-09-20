@@ -139,13 +139,3 @@ def test_numeric_conditions_have_a_plain_english_readback() -> None:
     cfg = ConfigSpec.model_validate(raw)
     detail = rule_text(cfg.rules[0], 1, Scope(cfg)).details[1].text
     assert detail == "Where ACTUAL COST − BUDGET is between 5 and 20 (inclusive): red text."
-
-
-def test_frontend_readback_fixture_matches_the_describe_endpoint_payload() -> None:
-    """The Approvals page's fixture is exactly what GET /configs/{id}/describe returns for the
-    reference config, so UI work and tests can't drift from the API's readback."""
-    from app.services.views import describe_json
-
-    fixture = Path(__file__).resolve().parents[2] / "frontend" / "src" / "fixtures" / "describe.reference.json"
-    live = describe_json(load_reference_raw(), reference_workbook.build())  # as the page receives it
-    assert json.loads(fixture.read_text(encoding="utf-8")) == live
