@@ -777,3 +777,63 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   23 tests) arrived as uncommitted work on this branch. The review fixed a mypy-strict error,
   the rounding semantics, readback bracketing and the incomplete skill schema, and added tests
   for each. The rounding test was mutation-checked against Python's `round`.
+
+## S7 (PATCH-004): the Apps Script emitter
+
+### "One code path" becomes "one definition, two emitters" (owner, via SPEC-PATCH-004 A.1)
+- **Amendment:** rule semantics are defined once in ConfigSpec. Execution targets are emitters
+  compiled from it, and no emitter may define semantics the schema cannot express. CLAUDE.md's
+  invariant 3 note now records this.
+- **The two targets:** `server` (the Python evaluator and adapters, the managed tier) and
+  `apps_script` (a generated `.gs` the owner pastes into their own sheet, the self-serve tier).
+- **Why this is not a second engine:** the old Engine.gs was a generic interpreter that read a
+  config blob at runtime, so semantics lived in two places. An emitted script is specialized
+  code compiled from one config: it contains no interpreter and no runtime config parsing. The
+  config JSON rides along as a trailing comment for traceability only. Engine.gs is not restored.
+- **What keeps the two honest:**
+  - The Python evaluator is the reference. A parity mismatch is fixed in the emitter, never by
+    changing the evaluator (D.6).
+  - An emitter that cannot express a rule refuses, naming the rule and the reason, in the same
+    shape as validation errors (json-pointer plus message). Silent partial emission is a build
+    failure, not a warning (A.3).
+  - A CI parity harness runs fixture configs through both targets and compares resulting grids;
+    the live half (pushing the `.gs` to a test spreadsheet) sits behind a marker so local runs
+    stay offline (D.1-D.3). The reference workbook config is a mandatory fixture, checked
+    against what `engine/reference/legacy.gs` produced (D.4).
+- **Privacy:** generated scripts are offline artifacts. No phone-home, telemetry, API calls,
+  embedded credentials or URLs. Once delivered we are blind to them by design, and that is the
+  self-serve tier's guarantee (A.4).
+- **Known asymmetry, stated plainly:** the script tier has no snapshots, undo, drift repair,
+  audit, fleet view or cross-file rules. Its only undo is an optional `backup_tab` guard, which
+  the UI must not describe as equivalent to a snapshot (B, D.5).
+- **Naming:** the numeric-conditions branch was also called S7 before this patch arrived.
+  PATCH-004's milestones (S7a-S7e) are the Apps Script emitter; the numeric-conditions work is
+  referred to here as the numeric-conditions branch to avoid the collision.
+
+## The pivot (SPEC-PATCH-005): script generator only
+
+### `v0-managed-tier`: what the tag holds and why it was parked (2026-09-20)
+- **The tag** points at `main` at `2408546`, the last commit of the managed-tier build, pushed
+  to the remote before any pivot commit. Nothing is deleted; the parked work is one checkout away.
+- **What is in it:**
+  - S1: the server-side engine (sort, format, move, copy, consolidate, validate, dedupe, clear),
+    the sheets adapter, atomic batchUpdate writes with a stale re-read guard.
+  - S2 with PATCH-002 A: the fleet Drive changes feed, the Redis debounce, self-write
+    suppression, the fingerprint no-op gate, encrypted snapshots, undo, resume, the drift pause.
+  - S3: the onboarding agent (OpenAI, tool loop, on-demand skills, escalation), profiles and
+    masking, the proposal and approval gates.
+  - S5 (PATCH-003 B1/B2): the FastAPI API, the React Approvals and Enroll pages, the templated
+    readback, dry-run previews, the approval auto-run, the instruction-privacy rework.
+  - The full test suite for all of it: 597 backend and 12 frontend tests.
+  - Live evidence: every S1-S3 and B1/B2 exit criterion was verified against two real
+    spreadsheets, recorded in docs/BLOCKERS.md.
+- **Why parked:** PATCH-005 narrows the product to "describe it, preview it, download a script
+  you paste yourself". The managed tier's value - fleet visibility, drift repair, undo, audit -
+  needs exactly the machinery (server runtime, Google auth, registry, queue) that the new
+  privacy claim ("we never connect to your spreadsheets, and we keep nothing") rules out.
+- **What is NOT parked, and must not be:** ConfigSpec, the validator, `describe.py`, the
+  evaluator (now the oracle: it renders the preview and is the reference the generated script is
+  proven against) and the Apps Script emitter.
+- **Not included in the tag:** numeric conditions (branch `s7-numeric-conditions`, commit
+  `2cec203`) and the S7a emitter work in progress. Both survive the pivot, so they belong on
+  `main` rather than in the parked snapshot.

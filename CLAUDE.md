@@ -63,6 +63,19 @@ Privacy invariants added by docs/SPEC-PATCH-002.md B (the patch calls them B.6â€
 > SPEC-PATCH-001 replaces invariant 3. There is one server-side engine, and rule
 > semantics exist in exactly one code path. Engine.gs and Apps Script are retired.
 > Patches 001 and 002 win over this file wherever they conflict.
+>
+> **SPEC-PATCH-004 A.1 amends that again:** rule semantics are DEFINED once in
+> ConfigSpec; execution targets are EMITTERS compiled from it, and no emitter may
+> define semantics the schema does not express. There are two targets: `server`
+> (the Python evaluator, the managed tier) and `apps_script` (a generated `.gs`
+> file the owner installs, the self-serve tier). An emitter never invents
+> behaviour: a rule it cannot express is refused by name and reason, and silent
+> partial emission is a build failure. The Python evaluator stays the reference â€”
+> parity mismatches are fixed in the emitter, never in the evaluator. Generated
+> scripts are offline artifacts: no phone-home, telemetry, API calls, credentials
+> or URLs. This is not a revival of Engine.gs (a generic runtime interpreter);
+> emitted scripts are specialized, readable code, and Engine.gs is not restored.
+> Patches 001, 002, 003 and 004 win over this file wherever they conflict.
 
 ## Locked stack (do not substitute)
 
