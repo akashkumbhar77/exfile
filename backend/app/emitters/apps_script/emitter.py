@@ -21,7 +21,9 @@ from string import Template
 from typing import Any
 
 from app.emitters import capabilities
+from app.services import cron
 from app.schemas.config import (
+    AfterTrigger,
     AllCondition,
     AnyCondition,
     CellFormatRule,
@@ -29,6 +31,7 @@ from app.schemas.config import (
     ConfigSpec,
     ConsolidateRule,
     DateCondition,
+    DebouncedTrigger,
     EnumCondition,
     EnumSpec,
     FormatRule,
@@ -44,8 +47,10 @@ from app.schemas.config import (
     NumericRange,
     NumericRound,
     NumericSubtract,
+    OnEditTrigger,
     Rule,
     RowFormatRule,
+    ScheduleTrigger,
     SortKey,
     SortRule,
     Style,
@@ -115,6 +120,10 @@ def _ident(text: str) -> str:
 
 def rule_fn(rule_id: str) -> str:
     return f"rule_{_ident(rule_id)}_"
+
+
+def step_fn(rule_id: str) -> str:
+    return f"step_{_ident(rule_id)}_"
 
 
 def stage_fn(enum_name: str) -> str:
@@ -464,6 +473,60 @@ def _consolidate_formatting(rule: ConsolidateRule, config: ConfigSpec) -> str:
     ])
 
 
+def _schedule_js(expr: str) -> str:
+    """A cron expression as the explicit hours/days/months/weekdays it allows (null = any)."""
+    parsed = cron.parse(expr)
+
+    def values(f: cron.CronField) -> str:
+        return "[" + ", ".join(str(v) for v in sorted(f.values)) + "]" if f.restricted else "null"
+
+    return (f"{{ cron: {js_string(expr.strip())}, hours: {values(parsed.hours)}, "
+            f"days: {values(parsed.days)}, months: {values(parsed.months)}, "
+            f"weekdays: {values(parsed.weekdays)} }}")
+
+
+def rule_entry(rule: Rule, number: int, when: str, selector: str) -> str:
+    """One row of the RULES table: the rule's step, what starts it, and which tabs it watches."""
+    consolidate = isinstance(rule, ConsolidateRule)
+    fields = [f"id: {js_string(rule.id)}", f"step: {step_fn(rule.id)}",
+              f"workbookWide: {'true' if consolidate else 'false'}"]
+    trigger = rule.trigger
+    if isinstance(trigger, OnEditTrigger):
+        names = ", ".join(js_string(canon_key(c)) for c in trigger.on_edit.columns)
+        fields += ["trigger: 'on_edit'", f"columns: [{names}]"]
+    elif isinstance(trigger, AfterTrigger):
+        fields += ["trigger: 'after'", f"after: {js_string(trigger.after)}"]
+    elif isinstance(trigger, DebouncedTrigger):
+        fields += ["trigger: 'debounced'", f"quietSeconds: {trigger.debounced.quiet_seconds}"]
+    else:
+        assert isinstance(trigger, ScheduleTrigger)
+        fields += ["trigger: 'schedule'", f"schedule: {_schedule_js(trigger.schedule.cron)}"]
+    fields.append(f"appliesTo: function (view) {{ var name = view.name; return {selector}; }}")
+    comment = wrap_comment(f"Rule {number}: {rule.id} - runs {when}", "  // ", "  //   ")
+    return comment + "\n  { " + ",\n    ".join(fields) + " }"
+
+
+def _install_lines(config: ConfigSpec) -> tuple[str, str]:
+    """The triggers this config needs, and the sentence the owner sees once they are installed."""
+    kinds = {type(r.trigger) for r in config.rules}
+    lines: list[str] = []
+    said: list[str] = []
+    if kinds & {OnEditTrigger, DebouncedTrigger}:
+        lines.append("  ScriptApp.newTrigger('handleEdit').forSpreadsheet(ss).onEdit().create();")
+    if OnEditTrigger in kinds:
+        said.append("straight after edits")
+    if DebouncedTrigger in kinds:
+        lines.append("  ScriptApp.newTrigger('handleTick').timeBased().everyMinutes(1).create();")
+        said.append("a short while after editing stops")
+    if ScheduleTrigger in kinds:
+        lines.append("  ScriptApp.newTrigger('handleSchedule').timeBased().everyHours(1).create();")
+        said.append("on schedule")
+    if not said:
+        return "  // every rule here runs only from Run now", js_string("Installed. Use the menu's Run now.")
+    listed = said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
+    return "\n".join(lines), js_string(f"Installed. Rules now run {listed}.")
+
+
 def _stage_functions(config: ConfigSpec, used: set[str]) -> list[str]:
     out = []
     for name in sorted(used):
@@ -529,8 +592,7 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
     scope = Scope(config, workbook)
     described = {r.id: r for r in describe_config(config, workbook).rules}
     functions: list[str] = []
-    calls: list[str] = []
-    workbook_calls: list[str] = []
+    entries: list[str] = []
     enums_used: set[str] = set()
 
     for rule in config.rules:
@@ -544,24 +606,28 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
                   "headline": wrap_comment(f"Rule {text.number}: {text.headline}", " * ", " *   ")[3:],
                   "when": wrap_comment(f"Runs: {text.when}", " * ", " *   ")[3:],
                   "fn": rule_fn(rule.id), "rule_id": rule.id}
+        step = {"number": text.number, "rule_id": rule.id, "tab_note": tab_note, "step": step_fn(rule.id)}
         if isinstance(rule, SortRule):
             comparisons = sort_comparisons(rule.keys, cols)
             enums_used |= {k.using_enum for k in rule.keys if k.using_enum is not None}
             functions.append(fill("sort.js", columns=cols.declarations(), comparisons=comparisons, **common))
-            calls.append(fill("sort_call.js", number=text.number, rule_id=rule.id, tab_note=tab_note,
-                              selector=selector, var_name=var_name, fn=rule_fn(rule.id)))
+            call = fill("sort_call.js", var_name=var_name, fn=rule_fn(rule.id))
+            functions.append(fill("step.js", selector=selector, call=call.rstrip("\n"), **step))
         elif isinstance(rule, ConsolidateRule):
             enums_used |= _enums_in_consolidate(rule, config)
             functions.append(consolidate_function(rule, config, common))
-            workbook_calls.append(fill("consolidate_call.js", number=text.number, rule_id=rule.id,
-                                       tab_note=tab_note, var_name=var_name, fn=rule_fn(rule.id)))
+            functions.append(fill("consolidate_call.js", var_name=var_name, fn=rule_fn(rule.id),
+                                  target_note=rule.target_tab, **step))
         else:
             body = format_body(rule, cols)
             enums_used |= _enums_in_format(rule)
             functions.append(fill("format.js", columns=cols.declarations(), body=body, **common))
-            calls.append(fill("format_call.js", number=text.number, rule_id=rule.id, tab_note=tab_note,
-                              selector=selector, var_name=var_name, fn=rule_fn(rule.id)))
+            call = fill("format_call.js", var_name=var_name, fn=rule_fn(rule.id))
+            functions.append(fill("step.js", selector=selector, call=call.rstrip("\n"), **step))
+        entries.append(rule_entry(rule, text.number, text.when, selector))
 
+    targets = ", ".join(js_string(r.target_tab) for r in config.rules if isinstance(r, ConsolidateRule))
+    install, installed_note = _install_lines(config)
     parts = [
         _header(config, workbook, generated_at),
         _constants(config),
@@ -569,8 +635,9 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
         _canonical_function(config),
         *_stage_functions(config, enums_used),
         *functions,
-        fill("entry.js", entry_point=ENTRY_POINT, calls="\n".join(calls).rstrip("\n"),
-             workbook_calls="\n".join(workbook_calls).rstrip("\n") or "  // no workbook-wide rules"),
+        fill("triggers.js", rules=",\n".join(entries), targets=targets, install=install,
+             installed_note=installed_note, entry_point=ENTRY_POINT),
+        fill("entry.js", entry_point=ENTRY_POINT),
         _config_comment(config, scope),
     ]
     return EmitResult(capabilities.TARGET, "\n\n".join(p.strip("\n") for p in parts) + "\n", [])

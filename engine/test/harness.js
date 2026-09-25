@@ -166,6 +166,8 @@ function runRequest(req) {
       results.push(env.edit(...step.edit));
     } else if (step.advance) {
       env.advance(step.advance);
+    } else if (step.open) {
+      results.push(env.open());
     } else if (step.tick) {
       results.push(env.tick());
     } else {
@@ -180,6 +182,8 @@ function runRequest(req) {
     fetches: env.fetches(),
     calls: JSON.parse(JSON.stringify(env.mock.calls)),
     toasts: env.toasts(),
+    menus: JSON.parse(JSON.stringify(env.mock.ss.menus)),
+    triggers: env.mock.triggers().map((t) => ({ fn: t.fn, kind: t.kind, extra: JSON.parse(JSON.stringify(t.extra)) })),
     logs: env.logs,
   };
 }

@@ -16,5 +16,6 @@ ${absent}
  * or contains credentials. Nobody but you can see what it does with your data.
  * You can read and edit it; it is ordinary code, not a black box.
  *
- * Paste it into Extensions > Apps Script, save, then run ${entry_point} once.
+ * Paste it into Extensions > Apps Script, save, then run installTrigger once. That sets up
+ * the automatic runs listed above and a "${product}" menu with Run now and Pause/Resume.
  */

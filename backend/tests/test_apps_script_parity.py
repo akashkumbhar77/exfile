@@ -8,6 +8,8 @@ built for the retired Engine.gs and is already validated against `engine/referen
 by `engine/test/engine.test.js` (the legacy golden files). This is the offline half of the proof;
 the live half (PATCH-004 D.3, PATCH-005 P4) still has to run the same script in a real
 spreadsheet before release.
+
+The unmodified reference config, triggers included, is covered in test_apps_script_triggers.py.
 """
 
 from __future__ import annotations
@@ -128,28 +130,6 @@ def test_held_rows_are_untouched_by_the_generated_script() -> None:
     assert py.plan.status == "OK"
     response = run_generated(result.script, workbook)
     compare_grids(py.workbook, response, config.header_row, "held rows")
-
-
-def test_the_full_reference_config_including_consolidate_matches() -> None:
-    """The SUMMARY tab the legacy script built: union headers, prepended source, locked target.
-
-    The reference config triggers its consolidate on a debounce, which needs the trigger wiring
-    (dirty flag + time trigger) that is still unemitted; the rule itself is the same either way,
-    so here it hangs off the format rule instead. The debounced form emits once triggers land.
-    """
-    raw = load_reference_raw()
-    raw["rules"][2]["trigger"] = {"after": "status_formatting"}
-    config = ConfigSpec.model_validate(raw)
-    workbook = reference_workbook.build()
-    result = emit(config, workbook=workbook)
-    assert result.ok and result.script is not None, [r.message for r in result.refusals]
-
-    py = execute_run(config, workbook, RunEvent.manual(), EvalContext(run_id="cons", today=TODAY))
-    assert py.plan.status == "OK"
-    response = run_generated(result.script, workbook)
-    compare_grids(py.workbook, response, config.header_row, "reference with consolidate")
-    target = next(t for t in response["tabs"] if t["name"] == "SUMMARY")
-    assert target["protected"] is True, "the rebuilt summary must be locked"
 
 
 def test_a_renamed_header_stops_the_whole_run_in_both_targets() -> None:

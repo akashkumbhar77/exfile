@@ -13,14 +13,14 @@ Both produce a refusal, with different reasons, so an owner can tell "never" fro
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from app.schemas.config import ConfigSpec, Rule, ScheduleTrigger
+from app.services import cron
 from app.services.validator import ValidationIssue
 
 TARGET = "apps_script"
-MILESTONE = "S7a"
+MILESTONE = "P1"
 
 
 @dataclass(frozen=True)
@@ -67,14 +67,11 @@ DESTRUCTIVE_ACTIONS = frozenset({"move", "clear", "dedupe"})
 TRIGGERS: dict[str, Support] = {
     "on_edit": _YES,
     "after": _YES,
-    "debounced": _later("S7b; needs the dirty flag + time trigger"),
-    # PATCH-005 I.7: time-driven triggers are native to Apps Script, hourly or coarser.
-    "schedule": _later("S7b; hourly granularity or coarser, in the script's own timezone"),
+    "debounced": _YES,    # dirty flag + a one-minute time trigger (CLAUDE.md engine rules)
+    # PATCH-005 I.7: time-driven triggers are native to Apps Script, hourly or coarser, in the
+    # script's own timezone.
+    "schedule": _YES,
 }
-
-# A cron minute field naming one fixed minute ("0", "30") runs at most hourly; a wildcard, a
-# step, a list or a range in that field means something finer, which the target refuses.
-HOURLY_OR_COARSER = re.compile(r"^\d{1,2}$")
 
 # Capabilities the managed tier has that a pasted script structurally cannot, kept here so the
 # download UI (E.2) and the refusals read from one table.
@@ -99,6 +96,22 @@ def _trigger_kind(rule: Rule) -> str:
     return next(iter(rule.trigger.model_dump(by_alias=True)))
 
 
+def _schedule_issues(i: int, rule: Rule, expr: str) -> list[ValidationIssue]:
+    """A schedule must parse, and must name one minute of the hour: hourly is the finest (I.7)."""
+    pointer = f"/rules/{i}/trigger"
+    try:
+        schedule = cron.parse(expr)
+    except cron.CronError as err:
+        return [_issue(pointer, "schedule_unreadable", f"rule {rule.id!r}: the schedule {expr.strip()!r} "
+                                                       f"cannot be read: {err}")]
+    if schedule.fixed_minute is None:
+        minute = expr.split()[0]
+        return [_issue(pointer, "schedule_too_frequent",
+                       f"rule {rule.id!r}: a generated script can run hourly at most; "
+                       f"the minute field {minute!r} asks for something more frequent")]
+    return []
+
+
 def check_config(config: ConfigSpec) -> list[ValidationIssue]:
     """Every reason this config cannot be emitted for the apps_script target, in config order.
 
@@ -118,15 +131,8 @@ def check_config(config: ConfigSpec) -> list[ValidationIssue]:
         if reason is not None:
             out.append(_issue(f"/rules/{i}/trigger", "unsupported_trigger", f"rule {rule.id!r}: {reason}"))
 
-        # Granularity is a property of the target, not of the milestone, so it is checked even
-        # while schedule triggers are still unemitted.
         if isinstance(rule.trigger, ScheduleTrigger):
-            minute = rule.trigger.schedule.cron.split()[0]
-            if not HOURLY_OR_COARSER.match(minute):
-                out.append(_issue(
-                    f"/rules/{i}/trigger", "schedule_too_frequent",
-                    f"rule {rule.id!r}: a generated script can run hourly at most; "
-                    f"the minute field {minute!r} asks for something more frequent"))
+            out.extend(_schedule_issues(i, rule, rule.trigger.schedule.cron))
 
         if rule.action in DESTRUCTIVE_ACTIONS and not config.guards.backup_tab:
             out.append(_issue(

@@ -117,6 +117,30 @@ function buildView_(sheet, raw) {
   };
 }
 
+/** The data rows' colours and strike-through, read once per run and then kept in step. */
+function viewFormats_(view) {
+  if (!view.formats) {
+    var range = view.sheet.getRange(DATA_START_ROW, 1, view.rowCount, view.lastCol);
+    view.formats = { range: range, fonts: range.getFontColors(), fills: range.getBackgrounds(),
+                     lines: range.getFontLines() };
+  }
+  return view.formats;
+}
+
+function writeValues_(view, values) {
+  return function () {
+    view.sheet.getRange(DATA_START_ROW, 1, values.length, view.lastCol).setValues(values);
+  };
+}
+
+function writeFormats_(plan) {
+  return function () {
+    plan.range.setFontColors(plan.fonts);
+    plan.range.setBackgrounds(plan.fills);
+    plan.range.setFontLines(plan.lines);
+  };
+}
+
 function isHeld_(view, row) {
   return view.holdIdx >= 0 && holdIsSet_(row[view.holdIdx]);
 }

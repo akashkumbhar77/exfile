@@ -5,14 +5,12 @@
  * The target tab is rebuilt from its sources every run, so anything typed into it by hand is
  * replaced. That is why it is locked.
  */
-function ${fn}(ss, today) {
+function ${fn}(run) {
+  // The sources as the earlier rules in this run left them, in the order the tabs appear.
   var views = [];
-  for (var t = 0; t < GOVERNED_TABS.length; t++) {
-    var name = GOVERNED_TABS[t].tab;
+  for (var t = 0; t < run.views.length; t++) {
+    var view = run.views[t], name = view.name;
     if (name === ${target}) continue;                 // a target is never its own source
-    var sheet = ss.getSheetByName(name);
-    if (!sheet) continue;
-    var view = buildView_(sheet);
     if (${selector}) views.push(view);
   }
 
@@ -50,6 +48,12 @@ ${derived_fill}
     }
   }
 ${sorting}
+  return { rule: '${rule_id}', action: 'consolidate', tab: ${target}, rowsAffected: rows.length,
+           apply: function () { writeConsolidated_${fn}(run.ss, run.today, rows, allHeaders); } };
+}
+
+/** Rebuilds the target tab from the planned rows: only called once every rule has succeeded. */
+function writeConsolidated_${fn}(ss, today, rows, allHeaders) {
   var sheet = targetSheet_(ss, ${target});
   var first = sheet.getRange(1, 1);
   var banner = { value: first.getValues()[0][0], font: first.getFontColors()[0][0],
@@ -68,5 +72,4 @@ ${title}
   if (rows.length) sheet.getRange(${data_start}, 1, rows.length, allHeaders.length).setValues(rows);
 ${locking}
 ${formatting}
-  return { rule: '${rule_id}', action: 'consolidate', tab: ${target}, rowsAffected: rows.length };
 }

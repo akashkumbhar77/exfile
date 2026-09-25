@@ -474,6 +474,7 @@
           var spec = {};
           var b = {
             everyMinutes: function (n) { spec.minutes = n; return b; },
+            everyHours: function (n) { spec.hours = n; return b; },
             create: function () { var t = trigger(fn, 'CLOCK', spec); triggers.push(t); return t; }
           };
           return b;

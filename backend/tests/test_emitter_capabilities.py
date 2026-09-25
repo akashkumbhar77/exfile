@@ -36,12 +36,24 @@ def refusals(config: ConfigSpec) -> list[tuple[str, str]]:
     return [(r.pointer, r.code) for r in result.refusals]
 
 
+CLEAR_RULE: dict[str, Any] = {
+    "id": "purge", "action": "clear", "tabs": ["MACHINES"], "trigger": {"on_edit": {}},
+    "when": {"column": "STATUS", "equals": "CANCELLED"}, "columns": ["STATUS"]}
+
+
+def test_the_reference_config_emits_whole() -> None:
+    """P1: every rule and trigger in the reference config is emitted - nothing refused."""
+    result = emit(ConfigSpec.model_validate(load_reference_raw()))
+    assert result.refusals == [] and result.script is not None
+
+
 def test_a_refused_rule_stops_the_whole_script() -> None:
-    """The reference consolidate rule emits; its debounced trigger does not, and that is enough
-    to withhold the whole script rather than ship one that quietly never runs that rule."""
-    config = ConfigSpec.model_validate(load_reference_raw())
+    """Three rules that emit plus one that does not yet: no script at all, rather than one that
+    quietly never runs the fourth rule."""
+    raw = load_reference_raw()
+    config = config_with([*raw["rules"], CLEAR_RULE], backup_tab=True)
     codes = refusals(config)
-    assert codes == [("/rules/2/trigger", "unsupported_trigger")]
+    assert codes == [("/rules/3", "unsupported_action")]
     assert "not emitted yet" in emit(config).refusals[0].message
 
 
@@ -53,8 +65,7 @@ def test_move_and_copy_are_in_the_matrix_and_name_their_milestone() -> None:
 
 
 def test_a_destructive_rule_requires_the_backup_tab() -> None:
-    clear_rule = {"id": "purge", "action": "clear", "tabs": ["MACHINES"], "trigger": {"on_edit": {}},
-                  "when": {"column": "STATUS", "equals": "CANCELLED"}, "columns": ["STATUS"]}
+    clear_rule = CLEAR_RULE
     without = refusals(config_with([clear_rule]))
     assert ("/guards/backup_tab", "backup_tab_required") in without
 
@@ -72,5 +83,13 @@ def test_a_destructive_rule_requires_the_backup_tab() -> None:
 ])
 def test_schedules_finer_than_hourly_are_refused(cron: str, refused: bool) -> None:
     rule = {**only_sort(), "trigger": {"schedule": {"cron": cron}}}
-    codes = [c for c in refusals(config_with([rule])) if c[1] == "schedule_too_frequent"]
-    assert bool(codes) is refused, cron
+    result = emit(config_with([rule]))
+    codes = [r.code for r in result.refusals]
+    assert codes == (["schedule_too_frequent"] if refused else []), cron
+    assert (result.script is None) is refused
+
+
+@pytest.mark.parametrize("cron", ["0 25 * * *", "0 9 * * FUNDAY", "0 9 32 * *", "0 9-5 * * *"])
+def test_a_schedule_that_cannot_be_read_is_refused_by_name(cron: str) -> None:
+    rule = {**only_sort(), "trigger": {"schedule": {"cron": cron}}}
+    assert [r.code for r in capabilities.check_config(config_with([rule]))] == ["schedule_unreadable"]

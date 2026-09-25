@@ -902,3 +902,43 @@ Each was raised in the pre-pivot review and accepted; they are now section I of 
 - **Kept deliberately:** ConfigSpec and the validator, the evaluator and every rule, `describe`,
   `preview`, the agent (profile, masking, skills, tool loop), the emitter, `engine/test` and
   `engine/reference/legacy.gs` (proof infrastructure, amendment I.2).
+
+### Roadmap and two product defaults (owner, 2026-09-25)
+- The working breakdown from here to release is `docs/ROADMAP.md` (P1 → P5, per PATCH-005 F/I).
+- **Default trigger:** an instruction that does not say when to run compiles to `debounced`
+  (60 s quiet) on edits to the governed tabs; the generated menu always offers "Run now". The
+  readback states the timing, so the default is visible and overridable. Lands with P2.
+- **The paste-header-rows path (PATCH-005 D.1) is deferred until after P5**: without data rows
+  there is no meaningful preview, and the preview is the product.
+
+### P1: trigger wiring - the reference config emits whole (2026-09-25)
+- **What starts a rule mirrors the evaluator's `select_rules`, event by event.** The script
+  carries a `RULES` table (each rule's step function, trigger, watched columns, and the tabs it
+  applies to) and a small dispatcher: an edit runs the on_edit rules watching that tab and column
+  and marks debounced rules dirty; a one-minute trigger runs dirty rules once their quiet period
+  has passed; an hourly trigger runs scheduled rules due in the current hour, once per hour; `after`
+  rules follow their parent on the same tabs. Edits to a consolidate target start nothing.
+- **Triggers:** `installTrigger()` creates only what the config needs (edit, one-minute and
+  hourly triggers, plus open for the menu), running as the owner. It removes its own earlier
+  triggers and orphans left by replaced code, such as the legacy script's `onEditAutoSort`. The
+  menu has Run now, Pause and Resume. Pausing stops automatic runs only and locks nothing
+  (invariant 8); Run now still works while paused.
+- **Schedules** are parsed once, in Python (`app/services/cron.py`, standard Vixie semantics), and
+  emitted as explicit hour/day/month/weekday sets; the script never parses cron. They are
+  evaluated in the script's own timezone (PATCH-005 I.7). An hourly trigger fires at a minute
+  Google picks, so a schedule runs within its hour, not at its minute; the script says so, and
+  the P2 readback must too. An expression that cannot be read is refused as
+  `schedule_unreadable`.
+- **Two emitter bugs fixed along the way** (the evaluator was right both times):
+  - Consolidate read its sources alphabetically instead of in sheet order.
+  - The script wrote rule by rule, so a failing or guard-blocked rule left earlier writes in
+    place. Runs are now planned in memory and written only when every rule has succeeded
+    (invariant 5).
+- **Tests:** 11 trigger-parity tests, each killed by a targeted mutation of the template it
+  guards. The Run-now test on the unmodified reference config is D.4, offline. The variant-config
+  consolidate test it replaces is gone.
+- **Mock:** gained `everyHours`; the harness gained an `open` step and reports menus and triggers.
+  The legacy golden-file suite still passes (27/27). The divergence list is
+  `docs/MOCK-DIVERGENCES.md`, with the owner's back-port rule.
+- **Environment note:** Windows Application Control now blocks the venv's `python.exe` launcher.
+  Tests run with the base uv interpreter plus the venv's site-packages on `PYTHONPATH`.

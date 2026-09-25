@@ -41,7 +41,13 @@ worker running on the host. Both sheets were registered with the owner's approva
 Open for the owner: confirm the author-based self-write filter (a deviation from A.3's
 literal mechanism).
 
-## PARTLY RESOLVED: consolidate `presentation`
+## RULED (owner, 2026-09-20), IN PROGRESS: consolidate `presentation`
+**Ruling:** the evaluator learns all three - modelled as intent, not rendering: per-column number
+format, per-column width, and banding on/off plus theme on the data range. The mock records
+those calls the way it records fills, and parity compares them like any other attribute. They
+stay in ConfigSpec (removing them would be a breaking change and would put an asterisk on D.4).
+Tracked in docs/ROADMAP.md, P1. The history below is kept for context.
+
 Title and header colours are now applied by the evaluator. What follows is the remaining question.
 
 Engine.gs used to apply the SUMMARY styling:
