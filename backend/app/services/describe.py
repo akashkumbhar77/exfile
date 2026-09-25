@@ -54,6 +54,8 @@ from app.schemas.config import (
     ValidateRule,
     ValueCondition,
 )
+from app.services import cron
+from app.services.backup import BACKUP_TAB, KEEP_RUNS
 from app.services.grid import Workbook
 
 NAMED_COLOURS: dict[str, str] = {
@@ -150,7 +152,7 @@ def trigger_text(t: Trigger, scope: Scope) -> str:
         case DebouncedTrigger():
             return f"{duration(t.debounced.quiet_seconds)} after edits stop"
         case ScheduleTrigger():
-            return f"on the schedule {quote(t.schedule.cron.strip())} (cron)"
+            return cron.describe(t.schedule.cron)
     raise TypeError(type(t).__name__)
 
 
@@ -441,4 +443,7 @@ def describe_config(config: ConfigSpec, workbook: Workbook | None = None) -> Con
               f"A run that would change more than {config.guards.max_rows_per_run} rows is stopped before "
               "writing anything.",
               "If a header in a governed tab is renamed, the sheet pauses instead of running rules."]
+    if config.guards.backup_tab:
+        guards.append(f"Rows that rules remove or overwrite are first copied to a hidden {BACKUP_TAB} tab "
+                      f"(the last {KEEP_RUNS} runs are kept).")
     return ConfigText(summary, present, missing, stages, rules, guards)

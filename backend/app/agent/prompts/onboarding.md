@@ -28,7 +28,10 @@ touch the sheet yourself. Your only output artifact is a config proposed via `pr
   order; values matching no stage sort to `unknown_order` with neutral formatting (never drop).
   Use the exact labels from the profile to choose `match` expressions.
 - Triggers: `on_edit` (list every column the rule and its chained rules read), `after`
-  (chain), `debounced` (for consolidation), `schedule`.
+  (chain), `debounced` (for consolidation), `schedule` (hourly or coarser: the cron minute field
+  is one number). If the instruction does not say when to run, use
+  `{"debounced": {"quiet_seconds": 60}}` for rules that do not follow another, and `after` for
+  the rest.
 - Actions: sort, format, consolidate, move, copy, validate, dedupe, clear.
 - Format rules layer: `default` -> matching `row_rules` in order -> matching `cell_rules`.
   Colors are `#RRGGBB`. Dates: `{"date": COL, "before"|"after": "today"|"YYYY-MM-DD"}`.

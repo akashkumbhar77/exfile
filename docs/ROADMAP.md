@@ -59,20 +59,23 @@ headerless column) read without crashing.
 - [x] Formula cells are detected (`TabMeta.formula_cells`), so the readback can warn (P2).
 - [x] Timezone is explicit input, never inferred (`read_xlsx(..., timezone=)`, validated).
 
-## P2 — end to end on the command line
+## P2 — end to end on the command line (built; exit waits on one live compile)
 
 Exit: `generate --file X.xlsx --instruction "..." --tz Asia/Kolkata` writes the `.gs` and
 `config.json`, and prints the readback, clause coverage and preview summary.
 
-- [ ] Profile → mask (B.7) → compile → validate on an uploaded grid, no Google, no storage.
-- [ ] Readback plus the mechanical clause-coverage diff (D.2): each clause of the instruction and
+- [x] Profile → mask (B.7) → compile → validate on an uploaded grid, no Google, no storage.
+- [x] Readback plus the mechanical clause-coverage diff (D.2): each clause of the instruction and
       the rule that covers it, or "not covered".
-- [ ] Before/after preview from the evaluator, headed with the date and timezone.
-- [ ] Schedules read back in words, including that they run within the named hour, not at
+- [x] Before/after preview from the evaluator, headed with the date and timezone.
+- [x] Schedules read back in words, including that they run within the named hour, not at
       its minute (MOCK-DIVERGENCES #3).
-- [ ] Refusals in the user's terms ("every 5 minutes isn't possible; hourly is the finest").
-- [ ] Re-uploading `config.json` regenerates without the instruction (D.5).
-- [ ] The compiler applies decision 1 (default trigger) and says so in the readback.
+- [x] Refusals in the user's terms ("every 5 minutes isn't possible; hourly is the finest").
+- [x] Re-uploading `config.json` regenerates without the instruction (D.5).
+- [x] The compiler applies decision 1 (default trigger) and says so in the readback.
+- [x] Formula columns on governed tabs are warned about, by column letter.
+- [ ] **Exit:** one live compile of a real instruction on the real workbook (owner's go-ahead:
+      it sends the instruction and masked samples to the model provider).
 
 ## P3 — the web page
 

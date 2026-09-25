@@ -78,7 +78,7 @@ def test_grid_containers_repr_redacted(workbook: Workbook, config: ConfigSpec) -
         assert not leaked, f"{type(o).__name__} repr leaks {len(leaked)} cell value(s)"
 
 
-LINTED = [BACKEND / "app"]  # the managed-tier cli.py is parked; P2 brings `generate`
+LINTED = [BACKEND / "app", BACKEND / "cli.py"]  # cli.py: the P2 `generate` command
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
 LOGGER_NAMES = {"log", "logger", "logging", "LOG", "_log"}
 # Names that, in this codebase, hold cell contents (rows, cells, grids, snapshot bodies).
@@ -94,7 +94,7 @@ def _sink_args(node: ast.AST) -> list[ast.AST] | None:
     """If node is a formatting sink, return the expressions that flow into the text."""
     if isinstance(node, ast.Call):
         f = node.func
-        if isinstance(f, ast.Name) and f.id == "print":
+        if isinstance(f, ast.Name) and f.id in {"print", "_say"}:  # _say: cli.py's ASCII-safe print
             return [*node.args, *(k.value for k in node.keywords)]
         if isinstance(f, ast.Attribute):
             owner = f.value
@@ -139,17 +139,37 @@ def _files() -> list[Path]:
     return out
 
 
+# Functions whose output to the owner's own screen IS the product: the preview shows them their
+# rows before and after (PATCH-003/005: values on screen only, never in logs or storage). Each entry
+# is reviewed here; nothing is exempted by a comment in the code.
+SCREEN_OUTPUT = {("cli.py", "_print_preview")}
+
+
+def _enclosing_functions(tree: ast.AST) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for fn in ast.walk(tree):
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for line in range(fn.lineno, (fn.end_lineno or fn.lineno) + 1):
+                out.setdefault(line, fn.name)
+    return out
+
+
 def test_lint_no_cell_values_at_log_or_error_sites() -> None:
     violations: list[str] = []
     for path in _files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        functions = _enclosing_functions(tree)
+        rel = path.relative_to(BACKEND).as_posix()
         for node in ast.walk(tree):
             args = _sink_args(node)
             if not args:
                 continue
+            line = getattr(node, "lineno", 0)
+            if (rel, functions.get(line, "")) in SCREEN_OUTPUT:
+                continue
             for a in args:
                 for name in _offending(a):
-                    violations.append(f"{path.relative_to(BACKEND)}:{getattr(node, 'lineno', '?')}: {name}")
+                    violations.append(f"{rel}:{line or '?'}: {name}")
     assert not violations, "cell-value names reach log/error sites:\n" + "\n".join(violations)
 
 

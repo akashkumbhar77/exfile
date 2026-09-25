@@ -1085,3 +1085,40 @@ only.
   (opt-in, and reports cell addresses only).
 - **Comparator fix:** an explicit white fill in an upload and no fill are indistinguishable in
   Sheets (the mock maps both to none), and the comparison now treats them alike.
+
+### P2: the generate command (2026-09-25)
+`python cli.py generate --file X.xlsx --tz ZONE (--instruction "..." | --instruction-file F | --config C.json)`
+reads the upload, compiles (or re-uses a config), and writes `<name>.gs` and `<name>.config.json`.
+It prints the readback, anything the instruction names that no rule uses, warnings about the file,
+the preview ("If it ran now (as of 25 Sep 2026, Asia/Kolkata)"), the limits, and the install steps.
+`app/generate.py` does the work so P3's page can call the same function.
+- **The compile checks the script can express its proposal.** A proposal the apps_script target
+  would refuse goes back to the model as stage `script`; the model adapts if the instruction
+  leaves room, or declines in plain words ("CANNOT: ...") if it explicitly asked, e.g. for every
+  5 minutes. The owner sees the sentence, and no script is written.
+- **Default timing (owner decision 1)** is in the prompt and in the triggers skill (prompt versions
+  3.2 / 4.2): when the instruction does not say when, rules run a minute after edits stop. The
+  readback states it, and coverage says "you did not say when".
+- **Clause coverage (D.2, I.8)** is `app/agent/coverage.py`, a mechanical diff with no model call.
+  Vocabulary: header names and canonical names (on tabs the rules touch or the instruction
+  names), tab names, labels in status-like columns (free text such as customer names is
+  excluded), colour and strike-through words, and timing phrases. Each mention is "used" or
+  "check this". Two false alarms were fixed in trial: a LEGENDS column named COLOUR matched the
+  verb, and "whenever status changes" was not recognised.
+- **Schedules read in words** (`cron.describe`), never promising a minute: "every Monday to Friday,
+  once between 09:00 and 10:00, at a minute Google picks, in the script's timezone".
+- **A re-used config.json** keeps its header fingerprints. If the sheet's headers changed since,
+  the preview says so and points back to the instruction, rather than silently re-fingerprinting.
+- **Formula warnings** name the governed tab and column letters holding formulas, when a sort,
+  move or copy could rewrite them.
+- **Privacy:** the preview's optional sample rows (`--rows N`) show the owner their own values on
+  their own screen. That is the one exemption in the B.6 lint, listed by name in the test
+  (`SCREEN_OUTPUT`). The CLI's other output is linted like app code. The instruction is never
+  logged. The script's embedded config says `uploaded-workbook`, never the file name.
+- **Console:** typographic quotes and dashes print as plain ASCII, so they read correctly on a
+  Windows console that is not UTF-8.
+- **Real-workbook smoke run** (no model, with the reference rules fingerprinted to the real
+  headers): readback, the two date warnings, and "SUMMARY: rebuilt; 1 row differs from what is
+  there now". That row is `SUMMARY!P77` (INVOICE NO), which the old summary holds as text while
+  the source holds a number.
+- **Tests:** 12 for generate and the CLI (scripted model), 7 for coverage, 6 for schedule wording.

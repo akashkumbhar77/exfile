@@ -25,6 +25,7 @@ from typing import Any
 
 
 from app.adapters.base import Adapter, Grid
+from app.emitters import capabilities
 from app.agent.llm import LlmClient, LlmError, LlmReply, parse_args, tool_spec
 from app.agent.profile import build_profile
 from app.agent.skills import catalogue_text, render
@@ -42,8 +43,8 @@ from app.services.validator import validate_config
 log = logging.getLogger("app.agent")
 
 PROMPTS = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "onboarding-v3.1"  # 3.1: numeric conditions
-SKILLS_PROMPT_VERSION = "onboarding-v4.1-skills"  # 4.1: numeric conditions skill
+PROMPT_VERSION = "onboarding-v3.2"  # 3.2: generated-script triggers and default timing
+SKILLS_PROMPT_VERSION = "onboarding-v4.2-skills"  # 4.2: generated-script triggers and default timing
 DECLINE_PREFIX = "CANNOT:"
 
 
@@ -108,7 +109,7 @@ class _Attempt(Exception):
 @dataclass
 class _Session:
     recorder: CompileRecorder
-    adapter: Adapter
+    adapter: Adapter | None
     llm: LlmClient
     org_id: str
     sheet_pk: int
@@ -182,6 +183,17 @@ class _Session:
                       for e in result.errors]
             raise _Attempt(json.dumps({"ok": False, "stage": "validate", "errors": errors, "notes": notes}))
         config = result.config
+        # PATCH-005: the output is a generated script, so a config it cannot express is not done.
+        refusals = capabilities.check_config(config)
+        if refusals:
+            raise _Attempt(json.dumps({
+                "ok": False, "stage": "script",
+                "errors": [{"pointer": r.pointer, "code": r.code, "message": r.message} for r in refusals],
+                "hint": "the generated Apps Script cannot do this. Choose a supported alternative only if "
+                        "the instruction leaves room for it; if the instruction explicitly asks for it "
+                        f"(e.g. every 5 minutes), reply starting with '{DECLINE_PREFIX}' and say in plain "
+                        "words what cannot be done and what can.",
+                "notes": notes}))
         ambiguous = ambiguous_header_patterns(config, self.grid)
         if ambiguous:
             raise _Attempt(json.dumps({"ok": False, "stage": "headers", "errors": ambiguous, "notes": notes}))
@@ -307,7 +319,7 @@ def target_headers(config: ConfigSpec, grid: Grid, projected: Any) -> dict[str, 
     return out
 
 
-def onboard(recorder: CompileRecorder, adapter: Adapter, llm: LlmClient, plan: ModelPlan, org_id: str,
+def onboard(recorder: CompileRecorder, adapter: Adapter | None, llm: LlmClient, plan: ModelPlan, org_id: str,
             sheet_ref: str, instruction: str, now: datetime | None = None,
             progress: Callable[[str], None] | None = None, grid: Grid | None = None) -> OnboardingResult:
     """Compile one instruction into a proposed config. `grid` skips the read for an uploaded file."""
@@ -319,6 +331,8 @@ def onboard(recorder: CompileRecorder, adapter: Adapter, llm: LlmClient, plan: M
     report_progress = progress or (lambda _state: None)
     report_progress("profiling")
     if grid is None:
+        if adapter is None:
+            raise ValueError("onboard needs a grid or an adapter to read one")
         grid = adapter.read_grid(sheet_ref)
     profile = build_profile(grid.workbook, grid.timezone)
     recorder.save_profile(sheet_pk, profile)  # structure and distributions only (B.7)
