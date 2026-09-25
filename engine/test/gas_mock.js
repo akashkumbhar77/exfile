@@ -14,6 +14,8 @@
  *  - deleteRows/insertRowsBefore shift values, formats and validations
  *  - script properties reject values larger than 9 KB
  *  - edits made by the script do not fire onEdit (only harness.edit() does)
+ *  - a cell may hold a formula (`f`, loaded via `formulas`); getValues returns its value, and any
+ *    write of a value or clear of the content replaces it, as in Sheets
  */
 (function (global) {
   'use strict';
@@ -92,6 +94,25 @@
   Sheet.prototype.getRange = function (row, col, numRows, numCols) {
     if (typeof row === 'string') throw new Error('A1 notation not supported by mock');
     return new Range(this, row, col, numRows === undefined ? 1 : numRows, numCols === undefined ? 1 : numCols);
+  };
+  function parseA1(a1) {
+    var m = /^([A-Z]+)(\d+)$/.exec(a1);
+    if (!m) throw new Error('mock getRangeList: only single-cell A1 like "C7" is supported, got ' + a1);
+    var col = 0;
+    for (var i = 0; i < m[1].length; i++) col = col * 26 + (m[1].charCodeAt(i) - 64);
+    return { row: Number(m[2]), col: col };
+  }
+  Sheet.prototype.getRangeList = function (a1s) {
+    var sheet = this;
+    var ranges = a1s.map(function (a1) { var p = parseA1(a1); return new Range(sheet, p.row, p.col, 1, 1); });
+    return {
+      getRanges: function () { return ranges.slice(); },
+      clearContent: function () {
+        count('writes', 'RangeList.clearContent');
+        ranges.forEach(function (r) { var c = sheet._cell(r._r - 1, r._c - 1, false); if (c) { c.v = ''; delete c.f; } });
+        return this;
+      }
+    };
   };
   Sheet.prototype.getDataRange = function () {
     return new Range(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1));
@@ -228,10 +249,15 @@
     return this._write(arr, function (c, v) {
       if (v !== null && typeof v === 'object' && !isDate(v)) throw new Error('setValues: unsupported object value');
       c.v = v === null || v === undefined ? '' : cloneValue(v);
+      delete c.f;
     }, 'Range.setValues');
   };
-  Range.prototype.setValue = function (v) { return this._fill(v, function (c, x) { c.v = cloneValue(x); }, 'Range.setValue'); };
-  Range.prototype.clearContent = function () { return this._fill('', function (c) { c.v = ''; }, 'Range.clearContent'); };
+  Range.prototype.setValue = function (v) {
+    return this._fill(v, function (c, x) { c.v = cloneValue(x); delete c.f; }, 'Range.setValue');
+  };
+  Range.prototype.clearContent = function () {
+    return this._fill('', function (c) { c.v = ''; delete c.f; }, 'Range.clearContent');
+  };
   Range.prototype.getFontColors = function () {
     return this._read(function (c) { return c && c.fc ? c.fc : '#000000'; }, 'Range.getFontColors');
   };
@@ -277,6 +303,15 @@
   Range.prototype.setDataValidation = function (rule) {
     return this._fill(rule, function (c, x) { c.dv = x ? { values: x.values.slice(), allowInvalid: x.allowInvalid } : null; },
       'Range.setDataValidation');
+  };
+  Range.prototype.clearFormat = function () {
+    return this._fill(null, function (c) {
+      var fresh = newCell();
+      FORMAT_KEYS.forEach(function (k) { c[k] = fresh[k]; });
+    }, 'Range.clearFormat');
+  };
+  Range.prototype.clearDataValidations = function () {
+    return this._fill(null, function (c) { c.dv = null; }, 'Range.clearDataValidations');
   };
   Range.prototype.getDataValidations = function () {
     return this._read(function (c) { return c ? c.dv : null; }, 'Range.getDataValidations');
@@ -474,6 +509,7 @@
           var spec = {};
           var b = {
             everyMinutes: function (n) { spec.minutes = n; return b; },
+            everyHours: function (n) { spec.hours = n; return b; },
             create: function () { var t = trigger(fn, 'CLOCK', spec); triggers.push(t); return t; }
           };
           return b;
@@ -531,6 +567,10 @@
           if (f.background !== undefined) cell.bg = f.background ? f.background.toLowerCase() : null;
           if (f.strike !== undefined) cell.fl = f.strike ? 'line-through' : 'none';
         });
+        Object.keys(t.column_widths || {}).forEach(function (c) { sh._colWidths[c] = t.column_widths[c]; });
+        (t.bandings || []).forEach(function (b) { sh._bandings.push(b); });
+        if (t.hidden) sh._hidden = true;
+        (t.formulas || []).forEach(function (f) { sh._cell(f.row - 1, f.col - 1, true).f = f.formula; });
       });
     },
     edit: function (tab, row, col, value) {
@@ -563,6 +603,7 @@
             out.fc = out.fc || '#000000';
             out.bg = out.bg && out.bg !== '#ffffff' ? out.bg : null;
             out.dv = cell.dv;
+            if (cell.f) out.f = cell.f;
             row.push(out);
           }
           cells.push(row);

@@ -1,3 +1,5 @@
+> **Stale:** this describes the parked managed tier as tagged in `v0-managed-tier`. The product pivoted in SPEC-PATCH-005; this file is rewritten at P3.
+
 # Data flow
 
 *For your IT or security reviewer: what the platform reads, what it keeps, what reaches an

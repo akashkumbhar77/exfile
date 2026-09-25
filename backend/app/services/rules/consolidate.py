@@ -7,14 +7,23 @@
 * sorted like `sort_like`, formatted like `format_like`
 * the target is fully regenerated and locked (by-design exception to invariant 8)
 
-Presentation (title styling, banding, widths, date formats) is applied by Engine.gs.
+Presentation, as intent (owner ruling 2026-09-20; the rules Engine.gs and legacy.gs applied):
+* title banner and header row colours
+* row banding with the configured theme over the data rows (none when there are no rows)
+* every target column whose header contains DATE gets `date_format` on its data rows;
+  `match_source` takes the number format of the first data cell of the date column in the first
+  source tab with data rows (the date column is the sort_like rule's first date key, else the
+  source's first header containing DATE), and d/m/yyyy when no source has one
+* column widths are set when the target tab is created, from `column_widths` (header names
+  compared trimmed and case-insensitively) or `default_column_width`; after that the owner's own
+  widths are kept
 """
 
 from __future__ import annotations
 
-from app.schemas.config import ConfigSpec, ConsolidateRule, FormatRule, SortRule
+from app.schemas.config import ConfigSpec, ConsolidateRule, FormatRule, Presentation, SortRule
 from app.services.conditions import EvalContext
-from app.services.grid import CellFormat, Row, Tab, Workbook, is_empty, row_is_empty
+from app.services.grid import Banding, CellFormat, Row, Tab, Workbook, is_empty, row_is_empty
 from app.services.headers import build_view, canon_key
 from app.services.rules.base import RulePlan, TabChange, TabStats
 from app.services.rules.format import format_view
@@ -64,6 +73,70 @@ def assemble(
     return headers, rows
 
 
+FALLBACK_DATE_FORMAT = "d/m/yyyy"
+DEFAULT_NUMBER_FORMAT = "General"  # what Sheets reports for a cell nobody formatted
+
+
+def column_width_map(presentation: Presentation) -> dict[str, int]:
+    """`column_widths` keyed by canonical header. When two keys canonicalise alike, a key already
+    written in canonical form wins; otherwise the later key does."""
+    out: dict[str, int] = {}
+    exact: set[str] = set()
+    for name, width in presentation.column_widths.items():
+        key = canon_key(name)
+        if key in exact:
+            continue
+        out[key] = width
+        if name == key:
+            exact.add(key)
+    return out
+
+
+def is_date_header(header: object) -> bool:
+    return "DATE" in str(header).upper()
+
+
+def source_date_format(rule: ConsolidateRule, workbook: Workbook, config: ConfigSpec) -> str:
+    """`match_source`: the first source with data rows that has the date column decides."""
+    sort_rule = config.rule(rule.sort_like) if rule.sort_like else None
+    date_key = None
+    if isinstance(sort_rule, SortRule):
+        date_key = next((canon_key(k.column) for k in sort_rule.keys if k.type == "date"), None)
+    for name in resolve_tabs(rule.sources, workbook, config):
+        tab = workbook.tab(name)
+        if tab is None or tab.last_content_row() < config.data_start_row:
+            continue
+        view = build_view(tab, config)
+        if date_key is not None:
+            idx = view.columns.get(date_key)
+        else:
+            idx = next((i for i, key in view.all_columns if "DATE" in key), None)
+        if idx is not None:
+            return tab.number_formats.get((config.data_start_row, idx + 1), DEFAULT_NUMBER_FORMAT)
+    return FALLBACK_DATE_FORMAT
+
+
+def present(rule: ConsolidateRule, after: Tab, headers: list[str], n_rows: int, existing: Tab | None,
+            workbook: Workbook, config: ConfigSpec) -> None:
+    """Banding, date formats and widths on the rebuilt target (see the module docstring)."""
+    p = rule.presentation
+    ds = config.data_start_row
+    if n_rows:
+        if p.banding:
+            after.banding = Banding(p.banding, ds, n_rows, len(headers))
+        fmt = source_date_format(rule, workbook, config) if p.date_format == "match_source" else p.date_format
+        for c, header in enumerate(headers, start=1):
+            if is_date_header(header):
+                for r in range(ds, ds + n_rows):
+                    after.number_formats[(r, c)] = fmt
+    if existing is None:
+        widths = column_width_map(p)
+        after.column_widths = {c: widths.get(canon_key(h), p.default_column_width)
+                               for c, h in enumerate(headers, start=1)}
+    else:
+        after.column_widths = dict(existing.column_widths)
+
+
 def evaluate_consolidate(
     rule: ConsolidateRule, workbook: Workbook, scope: list[str] | None, config: ConfigSpec, ctx: EvalContext
 ) -> RulePlan:
@@ -100,6 +173,7 @@ def evaluate_consolidate(
     after.ensure_size(config.data_start_row - 1, len(headers))
     after.insert_rows(config.data_start_row, rows)
     after.protected = rule.lock
+    present(rule, after, headers, len(rows), existing, workbook, config)
 
     format_rule = config.rule(rule.format_like) if rule.format_like else None
     if isinstance(format_rule, FormatRule):

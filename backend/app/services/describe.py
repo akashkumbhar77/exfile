@@ -32,6 +32,17 @@ from app.schemas.config import (
     FormatRule,
     MoveRule,
     NotCondition,
+    NumericAbs,
+    NumericAdd,
+    NumericColumn,
+    NumericCondition,
+    NumericDivide,
+    NumericExpression,
+    NumericLiteral,
+    NumericMultiply,
+    NumericRange,
+    NumericRound,
+    NumericSubtract,
     OnEditTrigger,
     Rule,
     ScheduleTrigger,
@@ -151,6 +162,8 @@ def condition_text(c: Condition, cell_column: str | None = None, top: bool = Tru
             if c.before is not None:
                 return f"{c.date} is before {c.before}"
             return f"{c.date} is after {c.after}"
+        case NumericCondition():
+            return numeric_condition_text(c)
         case ValueCondition():
             col = c.column or (f"the {cell_column} cell" if cell_column else "the cell")
             if c.is_blank is not None:
@@ -167,6 +180,54 @@ def condition_text(c: Condition, cell_column: str | None = None, top: bool = Tru
         case NotCondition():
             return f"not ({condition_text(c.not_, cell_column, True)})"
     raise TypeError(type(c).__name__)
+
+
+def _operand(expr: NumericExpression) -> str:
+    """A sub-expression inside arithmetic: bracketed when it is itself arithmetic, so
+    (A + B) × C never reads as A + B × C."""
+    text = numeric_expression_text(expr)
+    return f"({text})" if isinstance(expr, (NumericAdd, NumericSubtract, NumericMultiply, NumericDivide)) else text
+
+
+def _literal_text(n: int | float) -> str:
+    return str(int(n)) if isinstance(n, float) and n.is_integer() else str(n)
+
+
+def numeric_expression_text(expr: NumericExpression) -> str:
+    match expr:
+        case NumericLiteral():
+            return _literal_text(expr.literal)
+        case NumericColumn():
+            return expr.column
+        case NumericAdd():
+            return " + ".join(_operand(x) for x in expr.add)
+        case NumericSubtract():
+            return " − ".join(_operand(x) for x in expr.subtract)
+        case NumericMultiply():
+            return " × ".join(_operand(x) for x in expr.multiply)
+        case NumericDivide():
+            return " ÷ ".join(_operand(x) for x in expr.divide)
+        case NumericAbs():
+            return f"the absolute value of ({numeric_expression_text(expr.abs)})"
+        case NumericRound():
+            suffix = "place" if expr.round.digits == 1 else "places"
+            return f"{_operand(expr.round.value)} rounded to {expr.round.digits} decimal {suffix}"
+    raise TypeError(type(expr).__name__)
+
+
+def numeric_condition_text(c: NumericCondition) -> str:
+    left = numeric_expression_text(c.numeric.left)
+    right = c.numeric.right
+    if isinstance(right, NumericRange):
+        lower = numeric_expression_text(right.minimum)
+        upper = numeric_expression_text(right.maximum)
+        phrase = "is between" if c.numeric.op == "between" else "is not between"
+        return f"{left} {phrase} {lower} and {upper} (inclusive)"
+    op = {
+        "eq": "is equal to", "ne": "is not equal to", "gt": "is greater than", "gte": "is at least",
+        "lt": "is less than", "lte": "is at most",
+    }[c.numeric.op]
+    return f"{left} {op} {numeric_expression_text(right)}"
 
 
 def is_overdue(c: Condition) -> bool:

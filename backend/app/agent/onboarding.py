@@ -23,29 +23,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
 
 from app.adapters.base import Adapter, Grid
 from app.agent.llm import LlmClient, LlmError, LlmReply, parse_args, tool_spec
 from app.agent.profile import build_profile
 from app.agent.skills import catalogue_text, render
 from app.agent.tools import ToolError, sample_rows
-from app.models import LlmCall, Profile
 from app.schemas.config import ConfigSpec
 from app.services.dry_run import DryRunReport
 from app.services.grid import cell_text
-from app.services.live import prepare_run
+from app.services.planning import plan_grid
 from app.services.preflight import compute_schema_hash
-from app.services.registry import ensure_org, ensure_pending_sheet, headers_of, propose_config, record_event
+from app.agent.recorder import CompileRecorder, MemoryRecorder
+from app.services.headers import headers_of
 from app.services.runner import RunEvent
 from app.services.validator import validate_config
 
 log = logging.getLogger("app.agent")
 
 PROMPTS = Path(__file__).parent / "prompts"
-PROMPT_VERSION = "onboarding-v3"
-SKILLS_PROMPT_VERSION = "onboarding-v4-skills"
+PROMPT_VERSION = "onboarding-v3.1"  # 3.1: numeric conditions
+SKILLS_PROMPT_VERSION = "onboarding-v4.1-skills"  # 4.1: numeric conditions skill
 DECLINE_PREFIX = "CANNOT:"
 
 
@@ -109,7 +107,7 @@ class _Attempt(Exception):
 
 @dataclass
 class _Session:
-    factory: sessionmaker[Session]
+    recorder: CompileRecorder
     adapter: Adapter
     llm: LlmClient
     org_id: str
@@ -188,7 +186,7 @@ class _Session:
         if ambiguous:
             raise _Attempt(json.dumps({"ok": False, "stage": "headers", "errors": ambiguous, "notes": notes}))
         self.progress("dry_running")
-        prepared = prepare_run(self.adapter, self.sheet_ref, config, RunEvent("change"), now=self.now, grid=self.grid)
+        prepared = plan_grid(self.grid, config, RunEvent("change"), now=self.now, source_ref=self.sheet_ref)
         report = prepared.report
         targets_info = target_headers(config, self.grid, prepared.result.workbook)
         summary = {
@@ -209,16 +207,16 @@ class _Session:
                                                "its existing spellings as canonical names; if the instruction "
                                                "really asks for these names, propose the same config again."}))
 
-        with self.factory() as s, s.begin():
-            _, row = propose_config(s, self.org_id, config, governed_headers=headers_of(self.grid.workbook, config),
-                                    source={"kind": "onboarding", "session_id": self.session_id, "model": model,
-                                            "prompt_version": self.prompt_version})
-            record_event(s, _sheet(s, self.sheet_pk), "onboarding.proposed", {
-                "session_id": self.session_id, "config_version": row.version, "model": model,
-                "prompt_version": self.prompt_version, "dry_run_status": report.status,
-                "rules": [r.rule_id for r in report.rules],
-            })
-            config_id, version = row.id, row.version
+        proposed = self.recorder.propose(
+            self.sheet_pk, config, headers_of(self.grid.workbook, config),
+            {"kind": "onboarding", "session_id": self.session_id, "model": model,
+             "prompt_version": self.prompt_version})
+        self.recorder.event(self.sheet_pk, "onboarding.proposed", {
+            "session_id": self.session_id, "config_version": proposed.version, "model": model,
+            "prompt_version": self.prompt_version, "dry_run_status": report.status,
+            "rules": [r.rule_id for r in report.rules],
+        })
+        config_id, version = proposed.id, proposed.version
         self.accepted = OnboardingResult("PENDING_APPROVAL", self.session_id, config_id=config_id,
                                          config_version=version, config=config, report=report, model=model)
         return json.dumps({"ok": True, "stored_as": "PENDING_APPROVAL", "dry_run": summary})
@@ -242,15 +240,17 @@ class _Session:
 
     # -- logging --
     def log_call(self, model: str, attempt: int, turn: int, reply: LlmReply | None, error: str | None) -> None:
-        with self.factory() as s, s.begin():
-            s.add(LlmCall(
-                org_id=self.org_id, sheet_id=self.sheet_pk, session_id=self.session_id, purpose="onboarding",
-                provider=self.llm.provider, model=model, attempt=attempt, turn=turn,
-                input_tokens=reply.input_tokens if reply else 0, cached_tokens=reply.cached_tokens if reply else 0,
-                output_tokens=reply.output_tokens if reply else 0, latency_ms=reply.latency_ms if reply else 0,
-                tool_calls=",".join(t.name for t in reply.tool_calls)[:300] if reply else "",
-                status="ERROR" if error else "OK", error=error,
-            ))
+        """Metering only: counts, latency and tool names. Never prompts or cell values (B.6)."""
+        self.recorder.save_llm_call(self.sheet_pk, {
+            "session_id": self.session_id, "purpose": "onboarding", "provider": self.llm.provider,
+            "model": model, "attempt": attempt, "turn": turn,
+            "input_tokens": reply.input_tokens if reply else 0,
+            "cached_tokens": reply.cached_tokens if reply else 0,
+            "output_tokens": reply.output_tokens if reply else 0,
+            "latency_ms": reply.latency_ms if reply else 0,
+            "tool_calls": ",".join(t.name for t in reply.tool_calls)[:300] if reply else "",
+            "status": "ERROR" if error else "OK", "error": error,
+        })
 
 
 _HINTS: list[tuple[str, str, str]] = [
@@ -307,44 +307,33 @@ def target_headers(config: ConfigSpec, grid: Grid, projected: Any) -> dict[str, 
     return out
 
 
-def _sheet(s: Session, pk: int) -> Any:
-    from app.models import Sheet
-
-    return s.get(Sheet, pk)
-
-
-def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, plan: ModelPlan, org_id: str,
+def onboard(recorder: CompileRecorder, adapter: Adapter, llm: LlmClient, plan: ModelPlan, org_id: str,
             sheet_ref: str, instruction: str, now: datetime | None = None,
-            progress: Callable[[str], None] | None = None) -> OnboardingResult:
+            progress: Callable[[str], None] | None = None, grid: Grid | None = None) -> OnboardingResult:
+    """Compile one instruction into a proposed config. `grid` skips the read for an uploaded file."""
     session_id = "onb_" + uuid.uuid4().hex[:12]
     if not instruction.strip():
         return OnboardingResult("FAILED", session_id, reason="the instruction is empty")
 
-    with factory() as s, s.begin():
-        ensure_org(s, org_id)
-        sheet_pk = ensure_pending_sheet(s, org_id, sheet_ref).id  # B.9: registered before we read it
+    sheet_pk = recorder.start(sheet_ref)
     report_progress = progress or (lambda _state: None)
     report_progress("profiling")
-    grid = adapter.read_grid(sheet_ref)
+    if grid is None:
+        grid = adapter.read_grid(sheet_ref)
     profile = build_profile(grid.workbook, grid.timezone)
-    with factory() as s, s.begin():
-        if grid.title:
-            _sheet(s, sheet_pk).title = grid.title[:300]  # spreadsheet name: metadata, not cell data
-        version = (s.scalar(select(Profile.version).where(Profile.sheet_id == sheet_pk)
-                            .order_by(Profile.version.desc())) or 0) + 1
-        s.add(Profile(org_id=org_id, sheet_id=sheet_pk, version=version, body=profile))
+    recorder.save_profile(sheet_pk, profile)  # structure and distributions only (B.7)
 
     try:
         available = llm.available_models()
     except Exception as exc:
-        return _fail(factory, sheet_pk, session_id, f"could not reach the LLM provider: {type(exc).__name__}", [])
+        return _fail(recorder, sheet_pk, session_id, f"could not reach the LLM provider: {type(exc).__name__}", [])
     missing = [m for m in (plan.primary, plan.escalation) if m not in available]
     if missing:
-        return _fail(factory, sheet_pk, session_id,
+        return _fail(recorder, sheet_pk, session_id,
                      f"model(s) {missing} are not available to this API key; set LLM_PRIMARY_MODEL / "
                      "LLM_ESCALATION_MODEL", [])
 
-    sess = _Session(factory, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now,
+    sess = _Session(recorder, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now,
                     use_skills=plan.use_skills, progress=report_progress)
     sess.messages = [
         {"role": "system", "content": system_prompt(plan.use_skills)},
@@ -363,9 +352,9 @@ def onboard(factory: sessionmaker[Session], adapter: Adapter, llm: LlmClient, pl
                 sess.accepted.failures = failures
                 return sess.accepted
             if outcome.startswith(DECLINE_PREFIX):
-                return _fail(factory, sheet_pk, session_id, outcome[len(DECLINE_PREFIX):].strip()[:500], failures)
+                return _fail(recorder, sheet_pk, session_id, outcome[len(DECLINE_PREFIX):].strip()[:500], failures)
             failures.append(f"attempt {attempt} ({model}): {outcome[:300]}")
-    return _fail(factory, sheet_pk, session_id,
+    return _fail(recorder, sheet_pk, session_id,
                  f"no valid config after {attempt} attempts; last problem: {failures[-1] if failures else 'none'}",
                  failures)
 
@@ -408,13 +397,11 @@ def _run_attempt(sess: _Session, model: str, attempt: int, max_turns: int) -> st
     return f"no accepted proposal within {max_turns} turns"
 
 
-def _fail(factory: sessionmaker[Session], sheet_pk: int, session_id: str, reason: str,
+def _fail(recorder: CompileRecorder, sheet_pk: int, session_id: str, reason: str,
           failures: list[str]) -> OnboardingResult:
-    with factory() as s, s.begin():
-        # no reason text here: it can quote the instruction (B.6 addendum). The Enroll job keeps it
-        # in enrollments.failure, keyed by session_id.
-        record_event(s, _sheet(s, sheet_pk), "onboarding.needs_human", {
-            "session_id": session_id, "failed_attempts": len(failures),
-        })
+    # no reason text in the event: it can quote the instruction (B.6 addendum). The caller keeps
+    # the reason with the failed compile, keyed by session_id.
+    recorder.event(sheet_pk, "onboarding.needs_human",
+                   {"session_id": session_id, "failed_attempts": len(failures)})
     log.warning("onboarding.failed session=%s attempts=%d", session_id, len(failures))
     return OnboardingResult("FAILED", session_id, reason=reason, failures=failures)

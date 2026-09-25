@@ -30,6 +30,16 @@ from app.schemas.config import (
     FormatRule,
     MoveRule,
     NotCondition,
+    NumericAbs,
+    NumericAdd,
+    NumericColumn,
+    NumericCondition,
+    NumericDivide,
+    NumericExpression,
+    NumericMultiply,
+    NumericRange,
+    NumericRound,
+    NumericSubtract,
     OnEditTrigger,
     SortRule,
     ValidateRule,
@@ -164,6 +174,27 @@ class _Checker:
             if name not in self.governed:
                 yield _issue(at + [i], "unknown_tab", f"tab {name!r} has no schema_hashes entry (not governed)")
 
+    def numeric_expression(self, expr: NumericExpression, at: list[str | int]) -> Iterator[ValidationIssue]:
+        match expr:
+            case NumericColumn():
+                yield from self.column(expr.column, at + ["column"])
+            case NumericAdd():
+                for i, part in enumerate(expr.add):
+                    yield from self.numeric_expression(part, at + ["add", i])
+            case NumericSubtract():
+                for i, part in enumerate(expr.subtract):
+                    yield from self.numeric_expression(part, at + ["subtract", i])
+            case NumericMultiply():
+                for i, part in enumerate(expr.multiply):
+                    yield from self.numeric_expression(part, at + ["multiply", i])
+            case NumericDivide():
+                for i, part in enumerate(expr.divide):
+                    yield from self.numeric_expression(part, at + ["divide", i])
+            case NumericAbs():
+                yield from self.numeric_expression(expr.abs, at + ["abs"])
+            case NumericRound():
+                yield from self.numeric_expression(expr.round.value, at + ["round", "value"])
+
     def condition(self, cond: Condition, at: list[str | int], *, cell: bool) -> Iterator[ValidationIssue]:
         match cond:
             case AllCondition():
@@ -189,6 +220,13 @@ class _Checker:
                                  f"{cond.is_!r} is not a stage of enum {cond.enum!r}")
             case DateCondition():
                 yield from self.column(cond.date, at + ["date"])
+            case NumericCondition():
+                yield from self.numeric_expression(cond.numeric.left, at + ["numeric", "left"])
+                if isinstance(cond.numeric.right, NumericRange):
+                    yield from self.numeric_expression(cond.numeric.right.minimum, at + ["numeric", "right", "min"])
+                    yield from self.numeric_expression(cond.numeric.right.maximum, at + ["numeric", "right", "max"])
+                else:
+                    yield from self.numeric_expression(cond.numeric.right, at + ["numeric", "right"])
             case ValueCondition():
                 if cond.column is not None:
                     yield from self.column(cond.column, at + ["column"])

@@ -11,6 +11,7 @@ JSON Schema export: `scripts/export_config_schema.py` -> docs/config.schema.json
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Any, Literal, Union
 
 from pydantic import (
@@ -19,6 +20,7 @@ from pydantic import (
     Discriminator,
     Field,
     Tag,
+    field_validator,
     model_validator,
 )
 
@@ -115,6 +117,123 @@ class ValueCondition(_Strict):
         return self
 
 
+# Numeric expressions are deliberately a small, deterministic language rather than arbitrary
+# spreadsheet formulas. They evaluate against one row only; aggregates and external lookups do
+# not belong in the runtime rule language.
+class NumericLiteral(_Strict):
+    literal: int | float
+
+    @field_validator("literal", mode="before")
+    @classmethod
+    def _real_finite_number(cls, value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ValueError("numeric literal must be a finite JSON number")
+        return value
+
+
+class NumericColumn(_Strict):
+    column: ColumnRef
+
+
+class NumericAdd(_Strict):
+    add: Annotated[list[NumericExpression], Field(min_length=2)]
+
+
+class NumericSubtract(_Strict):
+    subtract: Annotated[list[NumericExpression], Field(min_length=2, max_length=2)]
+
+
+class NumericMultiply(_Strict):
+    multiply: Annotated[list[NumericExpression], Field(min_length=2)]
+
+
+class NumericDivide(_Strict):
+    divide: Annotated[list[NumericExpression], Field(min_length=2, max_length=2)]
+
+
+class NumericAbs(_Strict):
+    abs: NumericExpression
+
+
+class NumericRoundArgs(_Strict):
+    value: NumericExpression
+    digits: Annotated[int, Field(ge=0, le=12)] = 0
+
+
+class NumericRound(_Strict):
+    round: NumericRoundArgs
+
+
+_NUMERIC_TAGS: dict[type[BaseModel], str] = {
+    NumericLiteral: "num:literal",
+    NumericColumn: "num:column",
+    NumericAdd: "num:add",
+    NumericSubtract: "num:subtract",
+    NumericMultiply: "num:multiply",
+    NumericDivide: "num:divide",
+    NumericAbs: "num:abs",
+    NumericRound: "num:round",
+}
+
+
+def _numeric_kind(v: Any) -> str | None:
+    if isinstance(v, BaseModel):
+        return _NUMERIC_TAGS.get(type(v))
+    if not isinstance(v, dict) or len(v) != 1:
+        return None
+    key = next(iter(v))
+    return f"num:{key}" if key in ("literal", "column", "add", "subtract", "multiply", "divide", "abs", "round") else None
+
+
+NumericExpression = Annotated[
+    Union[
+        Annotated[NumericLiteral, Tag("num:literal")],
+        Annotated[NumericColumn, Tag("num:column")],
+        Annotated[NumericAdd, Tag("num:add")],
+        Annotated[NumericSubtract, Tag("num:subtract")],
+        Annotated[NumericMultiply, Tag("num:multiply")],
+        Annotated[NumericDivide, Tag("num:divide")],
+        Annotated[NumericAbs, Tag("num:abs")],
+        Annotated[NumericRound, Tag("num:round")],
+    ],
+    Discriminator(
+        _numeric_kind,
+        custom_error_type="invalid_numeric_expression",
+        custom_error_message="numeric expression must have exactly one supported operation",
+    ),
+]
+
+
+class NumericRange(_Strict):
+    minimum: NumericExpression = Field(alias="min")
+    maximum: NumericExpression = Field(alias="max")
+
+    @model_validator(mode="after")
+    def _ordered_literals(self) -> NumericRange:
+        if isinstance(self.minimum, NumericLiteral) and isinstance(self.maximum, NumericLiteral):
+            if self.minimum.literal > self.maximum.literal:
+                raise ValueError("numeric range min must not exceed max")
+        return self
+
+
+class NumericComparison(_Strict):
+    left: NumericExpression
+    op: Literal["eq", "ne", "gt", "gte", "lt", "lte", "between", "not_between"]
+    right: NumericExpression | NumericRange
+
+    @model_validator(mode="after")
+    def _right_matches_operator(self) -> NumericComparison:
+        range_op = self.op in ("between", "not_between")
+        if range_op != isinstance(self.right, NumericRange):
+            expected = "a range with min and max" if range_op else "one numeric expression"
+            raise ValueError(f"numeric operator {self.op!r} needs {expected} on the right")
+        return self
+
+
+class NumericCondition(_Strict):
+    numeric: NumericComparison
+
+
 class AllCondition(_Strict):
     all: Annotated[list[Condition], Field(min_length=1)]
 
@@ -134,6 +253,7 @@ _CONDITION_TAGS: dict[type[BaseModel], str] = {
     EnumCondition: "cond:enum",
     DateCondition: "cond:date",
     ValueCondition: "cond:value",
+    NumericCondition: "cond:numeric",
 }
 
 
@@ -142,7 +262,7 @@ def _condition_kind(v: Any) -> str | None:
         return _CONDITION_TAGS.get(type(v))
     if not isinstance(v, dict):
         return None
-    for key in ("all", "any", "not", "enum", "date"):
+    for key in ("all", "any", "not", "enum", "date", "numeric"):
         if key in v:
             return f"cond:{key}"
     return "cond:value"
@@ -156,6 +276,7 @@ Condition = Annotated[
         Annotated[EnumCondition, Tag("cond:enum")],
         Annotated[DateCondition, Tag("cond:date")],
         Annotated[ValueCondition, Tag("cond:value")],
+        Annotated[NumericCondition, Tag("cond:numeric")],
     ],
     Discriminator(
         _condition_kind,
@@ -318,8 +439,9 @@ BandingTheme = Literal[
 
 
 class Presentation(_Strict):
-    """Cosmetics for a consolidate target. The evaluator applies title/header colours; banding,
-    widths and date_format are not applied by the server engine yet (docs/BLOCKERS.md)."""
+    """How a consolidate target looks. All of it is evaluated (services/rules/consolidate.py):
+    title and header colours, banding over the data rows, `date_format` on every column whose
+    header contains DATE, and column widths when the target tab is first created."""
 
     title: str | None = None
     title_font: HexColor = "#FFFFFF"
@@ -331,7 +453,9 @@ class Presentation(_Strict):
     default_column_width: Annotated[int, Field(ge=10, le=2000)] = 130
     date_format: Annotated[str, Field(min_length=1)] = Field(
         default="match_source",
-        description="'match_source' copies the first source dispatch-date format; otherwise a Sheets number format.",
+        description=("Number format for every target column whose header contains DATE. "
+                     "'match_source' copies the format of the first source's date column "
+                     "(sort_like's first date key); otherwise a Sheets number format."),
     )
 
 
@@ -408,6 +532,12 @@ class Guards(_Strict):
         default=True, description="Always true: destructive rules snapshot first (invariant 6)."
     )
     hold_column: Annotated[str, Field(min_length=1)] = "!hold"
+    backup_tab: bool = Field(
+        default=False,
+        description="Copy rows that move, dedupe or clear rules remove or overwrite to a hidden "
+                    "_backup tab, keeping the last 10 runs (services/backup.py). Forced on for "
+                    "generated scripts (PATCH-005 I.7); it is not a snapshot.",
+    )
 
 
 class ConfigSpec(_Strict):
@@ -429,6 +559,7 @@ class ConfigSpec(_Strict):
         return next((r for r in self.rules if r.id == rule_id), None)
 
 
-for _model in (AllCondition, AnyCondition, NotCondition, RowFormatRule, CellFormatRule,
-               MoveRule, CopyRule, ClearRule, FormatRule, ConfigSpec):
+for _model in (NumericAdd, NumericSubtract, NumericMultiply, NumericDivide, NumericAbs, NumericRoundArgs,
+               NumericRound, NumericRange, NumericComparison, NumericCondition, AllCondition, AnyCondition,
+               NotCondition, RowFormatRule, CellFormatRule, MoveRule, CopyRule, ClearRule, FormatRule, ConfigSpec):
     _model.model_rebuild()

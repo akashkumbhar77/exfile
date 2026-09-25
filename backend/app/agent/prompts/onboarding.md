@@ -42,6 +42,10 @@ touch the sheet yourself. Your only output artifact is a config proposed via `pr
   - value: `{"column": "VIP?", "equals": "YES"}` (in `cell_rules` the rule's `column` is used,
     so `{"equals": "YES"}` is enough). `equals`/`contains` take strings, `is_blank` a boolean.
   - enum: `{"enum": "TICKET STATE", "is": "RESOLVED"}` where `is` is one of the stage `value`s.
+  - numeric: `{"numeric": {"left": {"column": "DAYS REQUIRED"}, "op": "gt",
+    "right": {"literal": 20}}}`. Use it for above/below/ranges, comparing two numeric columns,
+    or row-local arithmetic. It uses only real number cells; never invent a helper column or a
+    spreadsheet formula.
   - combine with `{"all": [...]}`, `{"any": [...]}`, `{"not": {...}}`.
 - **Consolidate targets are never rule inputs.** To sort or colour the target, set the consolidate
   rule's `sort_like` / `format_like` to the ids of the source tabs' sort / format rules. Never

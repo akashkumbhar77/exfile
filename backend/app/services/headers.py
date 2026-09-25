@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from app.schemas.config import ConfigSpec, EnumSpec
-from app.services.grid import CellValue, Row, Tab, cell_text, is_empty, norm_text
+from app.services.grid import CellValue, Row, Tab, Workbook, cell_text, is_empty, norm_text
 
 
 def canon_key(name: str) -> str:
@@ -120,3 +120,13 @@ def classify(spec: EnumSpec, value: CellValue) -> tuple[str | None, int]:
             if match_expr(stage.match, value):
                 return stage.value, stage.order
     return None, spec.unknown_order
+
+
+def headers_of(workbook: Workbook, config: ConfigSpec) -> dict[str, list[str]]:
+    """Header text of each governed tab (structure only), for the drift "what changed" view."""
+    out: dict[str, list[str]] = {}
+    for name in config.schema_hashes:
+        tab = workbook.tab(name)
+        if tab is not None:
+            out[name] = [cell_text(h).strip() for h in tab.row(config.header_row)]
+    return out

@@ -41,7 +41,16 @@ worker running on the host. Both sheets were registered with the owner's approva
 Open for the owner: confirm the author-based self-write filter (a deviation from A.3's
 literal mechanism).
 
-## PARTLY RESOLVED: consolidate `presentation`
+## RESOLVED (2026-09-25): consolidate `presentation`
+Done as ruled below: evaluator, emitter, mock and parity (DECISIONS "P1: presentation as intent").
+
+### The ruling (owner, 2026-09-20)
+**Ruling:** the evaluator learns all three - modelled as intent, not rendering: per-column number
+format, per-column width, and banding on/off plus theme on the data range. The mock records
+those calls the way it records fills, and parity compares them like any other attribute. They
+stay in ConfigSpec (removing them would be a breaking change and would put an asterisk on D.4).
+Tracked in docs/ROADMAP.md, P1. The history below is kept for context.
+
 Title and header colours are now applied by the evaluator. What follows is the remaining question.
 
 Engine.gs used to apply the SUMMARY styling:
@@ -55,6 +64,14 @@ server-built SUMMARY therefore has the right rows, values and formats, but not l
 look. Two options:
 - (a) add it as S1/S2 work: new GridOps for column widths, banding and number formats
 - (b) park it
+
+**Sharpened by the emitter (2026-09-20).** The Apps Script target could apply banding, widths
+and date formats easily - Apps Script has direct APIs for all three. It deliberately does not.
+The evaluator is the oracle, and it does not model them, so anything the script did here would
+be behaviour no parity run can check: exactly the "an emitter never invents" line in PATCH-004
+A.3. So the gap is now a schema/oracle question, not a target question: either the evaluator
+learns these three (and the emitter follows), or they leave `Presentation`. Until then the
+generated SUMMARY has legacy's colours but not its widths or banding.
 
 ## Note: Engine.gs is still in the repo
 `engine/` and its tests still run (Node) but aren't used at runtime. Deleting them is a

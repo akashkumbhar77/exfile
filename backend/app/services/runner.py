@@ -22,6 +22,7 @@ from app.schemas.config import (
     Rule,
     ScheduleTrigger,
 )
+from app.services.backup import with_backup
 from app.services.conditions import EvalContext
 from app.services.grid import Workbook
 from app.services.headers import build_view, canon_key
@@ -149,5 +150,8 @@ def plan_run(config: ConfigSpec, workbook: Workbook, event: RunEvent, ctx: EvalC
             run.status = "BLOCKED"
         run.plans.append(plan)
         working = apply_plan(working, plan)
+    if run.status == "OK" and config.guards.backup_tab:
+        stamp = ctx.now.replace(microsecond=0) if ctx.now is not None else ctx.run_id
+        working = with_backup(working, run.plans, stamp)
     run.projected = working
     return run

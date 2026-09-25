@@ -10,11 +10,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from app.adapters.base import Adapter
+from app.adapters.base import Grid
 from app.schemas.config import ConfigSpec
 from app.services.grid import CellFormat, CellValue, Tab
-from app.services.live import prepare_run
 from app.services.ops import norm_format, same_value
+from app.services.planning import plan_grid
 from app.services.runner import RunEvent
 
 MAX_SAMPLE_ROWS = 20
@@ -62,9 +62,10 @@ def changed_rows(before: Tab | None, after: Tab, header_row: int, limit: int) ->
     return samples, total
 
 
-def compute_preview(adapter: Adapter, sheet_ref: str, config: ConfigSpec, now: datetime | None = None,
+def compute_preview(grid: Grid, config: ConfigSpec, now: datetime | None = None,
                     limit: int = MAX_SAMPLE_ROWS) -> dict[str, Any]:
-    p = prepare_run(adapter, sheet_ref, config, RunEvent("change"), now=now)
+    """The before/after the owner reviews, computed on the grid they gave us (PATCH-005 D.2)."""
+    p = plan_grid(grid, config, RunEvent("change"), now=now)
     before_wb, after_wb = p.grid.workbook, p.result.workbook
     tabs: list[dict[str, Any]] = []
     for name in sorted(set(p.report.per_tab) | set(p.summary)):

@@ -1,10 +1,12 @@
-"""S3 onboarding agent with a scripted fake LLM (real Postgres, fake Sheets).
+"""The compile path with a scripted fake LLM (fake Sheets, nothing persisted).
 
-Exit criteria (SPEC-PATCH-001 S3), provider-independent part:
-  * instruction -> valid config -> PENDING_APPROVAL -> dry-run equivalent to the hand-written one
+  * instruction -> valid config -> proposed -> dry-run equivalent to the hand-written one
   * validator errors are fed back; escalation after the primary model's attempts
-  * a nonsense instruction ends in a human-readable failure, never an ACTIVE config
-  * B.6/B.7: nothing sent to the LLM contains a raw cell value; llm_calls hold metadata only
+  * a nonsense instruction ends in a human-readable failure, and proposes nothing
+  * B.6/B.7: nothing sent to the LLM contains a raw cell value; metering holds metadata only
+
+Under PATCH-005 the compile keeps its by-products in a `MemoryRecorder` and writes nothing to
+a database; the approval-gate tests moved with the managed tier into `v0-managed-tier`.
 """
 
 from __future__ import annotations
@@ -15,25 +17,20 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
 
-from app.adapters.sheets_adapter import SheetsAdapter
+from app.adapters.base import StaticRegistry
 from app.agent.llm import LlmReply, ToolCall
 from app.agent.masking import is_enum_column
 from app.agent.onboarding import ModelPlan, OnboardingResult, onboard
-from app.models import Config, Event, LlmCall, Profile, Sheet
+from app.agent.recorder import MemoryRecorder
 from app.schemas.config import ConfigSpec
 from app.services.conditions import EvalContext
 from app.services.dry_run import dry_run
 from app.services.grid import cell_text
-from app.services.registry import DbRegistry, approve_config
 from tests.conftest import load_reference_raw
 from tests.fake_sheets import FakeSheetsService, seed
 from tests.fixtures import reference_workbook
-from tests.s2_harness import reset_db, start_postgres
-
-pytest.importorskip("pgserver")
+from tests.live.sheets_adapter import SheetsAdapter
 
 SID = "1OnboardSheetxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ORG = "org_onb"
@@ -90,29 +87,22 @@ def invalid_config() -> dict[str, Any]:
     return raw
 
 
-@pytest.fixture(scope="module")
-def pg_url(tmp_path_factory: pytest.TempPathFactory) -> str:
-    return start_postgres(tmp_path_factory.mktemp("pg_onb"))
-
-
 @pytest.fixture
-def env(pg_url: str) -> Iterator[tuple[sessionmaker[Session], SheetsAdapter]]:
-    factory = sessionmaker(create_engine(pg_url, future=True), expire_on_commit=False)
-    reset_db(factory)
+def env() -> tuple[MemoryRecorder, SheetsAdapter]:
+    recorder = MemoryRecorder()
     svc = FakeSheetsService({SID: seed(reference_workbook.build())})
-    yield factory, SheetsAdapter(svc, DbRegistry(factory))
+    return recorder, SheetsAdapter(svc, StaticRegistry(frozenset({SID})))
 
 
-def run(env: tuple[sessionmaker[Session], SheetsAdapter], llm: ScriptedLlm,
+def run(env: tuple[MemoryRecorder, SheetsAdapter], llm: ScriptedLlm,
         instruction: str = "Sort every tab by status stage then dispatch date; colour rows by status; "
                            "highlight overdue in-process rows; build a locked SUMMARY of all tabs.") -> OnboardingResult:
-    factory, adapter = env
-    return onboard(factory, adapter, llm, PLAN, ORG, SID, instruction)
+    recorder, adapter = env
+    return onboard(recorder, adapter, llm, PLAN, ORG, SID, instruction)
 
 
-def configs(factory: sessionmaker[Session]) -> list[Config]:
-    with factory() as s:
-        return list(s.scalars(select(Config).order_by(Config.id)))
+def proposed(recorder: MemoryRecorder) -> list[ConfigSpec]:
+    return list(recorder.configs.values())
 
 
 def test_instruction_compiles_to_pending_config_equivalent_to_hand_written(env: Any) -> None:
@@ -120,13 +110,9 @@ def test_instruction_compiles_to_pending_config_equivalent_to_hand_written(env: 
                                      call("propose_config", {"config": compiled_reference()})]})
     result = run(env, llm)
     assert result.status == "PENDING_APPROVAL" and result.model == "fake-mini"
-    factory, adapter = env
-    [row] = configs(factory)
-    assert row.status == "PENDING_APPROVAL"
-    with factory() as s:
-        sheet = s.scalars(select(Sheet)).one()
-        assert sheet.status == "PENDING"  # nothing live until a human approves
-        assert s.scalars(select(Profile)).one().version == 1
+    recorder, adapter = env
+    assert len(proposed(recorder)) == 1
+    assert recorder.profiles, "the sheet's structure was profiled"
 
     # exit criterion: dry-run summary equivalent to the hand-written reference config
     hand = load_reference_raw()
@@ -137,10 +123,6 @@ def test_instruction_compiles_to_pending_config_equivalent_to_hand_written(env: 
     theirs = dry_run(ConfigSpec.model_validate(hand), wb, ctx)
     assert ours.model_dump() == theirs.model_dump()
 
-    with factory() as s, s.begin():
-        approve_config(s, row.id, "owner@test")
-    with factory() as s:
-        assert s.scalars(select(Sheet)).one().status == "ACTIVE"
 
 
 def test_validator_errors_fed_back_then_escalation_succeeds(env: Any) -> None:
@@ -156,9 +138,8 @@ def test_validator_errors_fed_back_then_escalation_succeeds(env: Any) -> None:
     _, last_messages = llm.sent[-1]
     tool_texts = [m["content"] for m in last_messages if m["role"] == "tool"]
     assert any('"stage": "validate"' in t and "/rules/0" in t for t in tool_texts)
-    factory, _ = env
-    with factory() as s:
-        models = [c.model for c in s.scalars(select(LlmCall).order_by(LlmCall.id))]
+    recorder, _ = env
+    models = [c["model"] for c in recorder.llm_calls]
     assert models == ["fake-mini", "fake-mini", "fake-large"]
 
 
@@ -169,11 +150,9 @@ def test_nonsense_instruction_fails_readably_and_never_activates(env: Any) -> No
     result = run(env, llm, instruction="book me a flight to the moon and pay with the invoice column")
     assert result.status == "FAILED"
     assert "book flights" in result.reason
-    factory, _ = env
-    assert configs(factory) == []
-    with factory() as s:
-        assert s.scalars(select(Sheet)).one().status == "PENDING"
-        assert s.scalars(select(Event).where(Event.kind == "onboarding.needs_human")).one() is not None
+    recorder, _ = env
+    assert proposed(recorder) == []
+    assert [k for k, _ in recorder.events] == ["onboarding.needs_human"]
 
 
 def test_exhausted_attempts_open_a_human_ticket(env: Any) -> None:
@@ -182,8 +161,8 @@ def test_exhausted_attempts_open_a_human_ticket(env: Any) -> None:
     result = run(env, llm)
     assert result.status == "FAILED" and len(result.failures) == 3
     assert "no valid config after 3 attempts" in result.reason
-    factory, _ = env
-    assert configs(factory) == []  # rejected proposals are never stored
+    recorder, _ = env
+    assert proposed(recorder) == []  # a refused proposal is never kept
 
 
 def test_model_not_available_fails_before_any_call(env: Any) -> None:
@@ -217,12 +196,13 @@ def test_nothing_sent_to_the_llm_contains_raw_cell_values(env: Any) -> None:
 def test_llm_calls_rows_hold_metadata_only(env: Any) -> None:
     llm = ScriptedLlm({"fake-mini": [call("get_profile", {}), call("propose_config", {"config": compiled_reference()})]})
     run(env, llm)
-    factory, _ = env
-    with factory() as s:
-        rows = list(s.scalars(select(LlmCall).order_by(LlmCall.id)))
-    assert [r.tool_calls for r in rows] == ["get_profile", "propose_config"]
-    assert rows[0].cached_tokens == 1000 and rows[0].provider == "fake"
-    assert all(r.org_id == ORG and r.purpose == "onboarding" for r in rows)
+    recorder, _ = env
+    rows = recorder.llm_calls
+    assert [r["tool_calls"] for r in rows] == ["get_profile", "propose_config"]
+    assert rows[0]["cached_tokens"] == 1000 and rows[0]["provider"] == "fake"
+    assert all(r["purpose"] == "onboarding" for r in rows)
+    # metering only: counts, latency, tool names - never a prompt or a cell value
+    assert not any(isinstance(v, str) and len(v) > 300 for r in rows for v in r.values())
 
 
 def test_prompt_renders_and_worked_example_is_a_valid_config() -> None:
@@ -311,18 +291,17 @@ def test_skills_never_contain_the_reference_workbook_solution() -> None:
 def test_renaming_an_existing_summary_is_reviewed_once(env: Any) -> None:
     """First proposal that would rename existing SUMMARY columns is sent back with the diff;
     proposing the same headers again is accepted (an intended rename still works)."""
-    factory, adapter = env
+    recorder, adapter = env
     first = ScriptedLlm({"fake-mini": [call("propose_config", {"config": compiled_reference()})]})
     assert run(env, first).status == "PENDING_APPROVAL"
-    with factory() as s, s.begin():
-        approve_config(s, configs(factory)[0].id, "owner@test")
-    # materialize SUMMARY in the fake sheet so it "exists" for the next onboarding
-    from app.services.live import prepare_run
+    # materialize SUMMARY in the fake sheet so it "exists" for the next compile
+    from app.services.planning import plan_grid
     from app.services.runner import RunEvent as _E
-    p = prepare_run(adapter, SID, ConfigSpec.model_validate({**compiled_reference(), "sheet_id": SID, "org_id": ORG,
-                    "config_version": 1, "schema_hashes": first.sent and configs(factory)[0].body["schema_hashes"]}),
-                    _E("change"))
-    adapter.write_ops(SID, p.ops)
+    plan = plan_grid(adapter.read_grid(SID), proposed(recorder)[0], _E("change"), source_ref=SID)
+    # only SUMMARY's values matter here; the test adapter does not write presentation
+    from app.adapters.base import SetBanding, SetColumnWidth, WriteNumberFormats
+    adapter.write_ops(SID, [op for op in plan.ops
+                            if not isinstance(op, SetBanding | SetColumnWidth | WriteNumberFormats)])
 
     renamed = compiled_reference()
     renamed["canonical_headers"] = [c if c["canonical"] != "FREEZE?" else {**c, "canonical": "FROZEN"}
@@ -337,44 +316,3 @@ def test_renaming_an_existing_summary_is_reviewed_once(env: Any) -> None:
     result = run(env, llm)
     assert result.status == "PENDING_APPROVAL" and len(result.failures) == 1
     assert '"stage": "review"' in result.failures[0] and "FREEZE?" in result.failures[0]
-
-
-def test_reject_needs_a_reason_and_keeps_it(env: Any) -> None:
-    from app.services.registry import RegistryError, reject_config
-
-    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": compiled_reference()})]})
-    run(env, llm)
-    factory, _ = env
-    cid = configs(factory)[0].id
-    with pytest.raises(RegistryError, match="reason"):
-        with factory() as s, s.begin():
-            reject_config(s, cid, "owner@test", "   ")
-    with factory() as s, s.begin():
-        reject_config(s, cid, "owner@test", "benchmark artifact")
-    [row] = configs(factory)
-    assert (row.status, row.decision_reason, row.rejected_by) == ("REJECTED", "benchmark artifact", "owner@test")
-    assert row.governed_headers and "MACHINES" in row.governed_headers  # structure snapshot stored
-    assert row.source and row.source["kind"] == "onboarding"
-
-
-def test_owner_supplied_summary_title_is_applied_at_approval(env: Any) -> None:
-    """PATCH-003 decision (c): the title is given by the owner at approval, never read by the model."""
-    raw = compiled_reference()
-    for rule in raw["rules"]:
-        if rule["action"] == "consolidate":
-            rule.get("presentation", {}).pop("title", None)
-    llm = ScriptedLlm({"fake-mini": [call("propose_config", {"config": raw})]})
-    run(env, llm)
-    factory, adapter = env
-    cid = configs(factory)[0].id
-    with factory() as s, s.begin():
-        approve_config(s, cid, "owner@test", summary_title="ORDER SUMMARY — ALL TABS")
-    [row] = configs(factory)
-    assert row.summary_title == "ORDER SUMMARY — ALL TABS"
-    cfg = ConfigSpec.model_validate(row.body)
-    [cons] = [r for r in cfg.rules if r.action == "consolidate"]
-    assert cons.presentation.title == "ORDER SUMMARY — ALL TABS"  # type: ignore[union-attr]
-    out = dry_run(cfg, adapter.read_grid(SID).workbook, EvalContext("x", reference_workbook.TODAY))
-    assert out.status == "OK"
-    # the model never saw a title: nothing sent to it mentions one
-    assert "ALL TABS" not in json.dumps([m for _, msgs in llm.sent for m in msgs])

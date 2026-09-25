@@ -746,3 +746,295 @@ Minimal shapes for actions the SPEC names but doesn't specify:
   row. It prints the failure to the owner's terminal only. The model prompt necessarily carries
   the instruction; that is the B.7 boundary, and prompts are not persisted (`llm_calls` holds
   counts only).
+
+## S7: Numeric conditions (2026-09-18)
+
+### A row-level numeric condition language, not helper columns or formulas
+- **What:** a `numeric` condition compares two numeric expressions with `eq`, `ne`, `gt`,
+  `gte`, `lt`, `lte`, `between` or `not_between` (the range ones are inclusive).
+  - An expression is a `literal`, a `column`, or one of `add`, `subtract`, `multiply`,
+    `divide`, `abs` and `round`.
+  - It works anywhere a condition already does: format row and cell rules, move/copy/clear
+    `when`, and inside `all`/`any`/`not`.
+- **Why this shape:** it is file-independent and deterministic. It evaluates one row at a time,
+  with no aggregates, lookups or arbitrary spreadsheet formulas, so it stays in the compiled
+  config (invariant 2) and never needs a helper column written to the sheet.
+- **Safe by default (invariant 9):** only real number cells match. Blanks, text that looks
+  like a number, errors, division by zero and non-finite results are non-matches.
+  - **Watch for:** `not` of a numeric condition therefore matches those rows. "Not over 20"
+    includes blank cells.
+- **`round` rounds half away from zero, like the sheet's ROUND.** Python's `round()` rounds
+  half to even on the binary float (2.5 → 2, and 2.675 → 2.67 to 2 places), which would
+  disagree with what the owner sees. `sheets_round` goes through the shortest decimal repr.
+- **Readback:** nested arithmetic is bracketed ("(HOURS + 2) × RATE"), and whole-number
+  literals print without ".0".
+- **Onboarding:** the `conditions-and-format` skill ships the full numeric schema. Before this,
+  `NumericCondition` referenced `NumericComparison`, which wasn't included, so the model never
+  saw the expression grammar. A test now pins the closure. Prompt versions were bumped to
+  `onboarding-v3.1` and `onboarding-v4.1-skills`, so configs record which prompt knew about
+  numerics. `docs/config.schema.json` was regenerated.
+- **Provenance:** the initial implementation (schema, evaluator, validator, readback, skill and
+  23 tests) arrived as uncommitted work on this branch. The review fixed a mypy-strict error,
+  the rounding semantics, readback bracketing and the incomplete skill schema, and added tests
+  for each. The rounding test was mutation-checked against Python's `round`.
+
+## S7 (PATCH-004): the Apps Script emitter
+
+### "One code path" becomes "one definition, two emitters" (owner, via SPEC-PATCH-004 A.1)
+- **Amendment:** rule semantics are defined once in ConfigSpec. Execution targets are emitters
+  compiled from it, and no emitter may define semantics the schema cannot express. CLAUDE.md's
+  invariant 3 note now records this.
+- **The two targets:** `server` (the Python evaluator and adapters, the managed tier) and
+  `apps_script` (a generated `.gs` the owner pastes into their own sheet, the self-serve tier).
+- **Why this is not a second engine:** the old Engine.gs was a generic interpreter that read a
+  config blob at runtime, so semantics lived in two places. An emitted script is specialized
+  code compiled from one config: it contains no interpreter and no runtime config parsing. The
+  config JSON rides along as a trailing comment for traceability only. Engine.gs is not restored.
+- **What keeps the two honest:**
+  - The Python evaluator is the reference. A parity mismatch is fixed in the emitter, never by
+    changing the evaluator (D.6).
+  - An emitter that cannot express a rule refuses, naming the rule and the reason, in the same
+    shape as validation errors (json-pointer plus message). Silent partial emission is a build
+    failure, not a warning (A.3).
+  - A CI parity harness runs fixture configs through both targets and compares resulting grids;
+    the live half (pushing the `.gs` to a test spreadsheet) sits behind a marker so local runs
+    stay offline (D.1-D.3). The reference workbook config is a mandatory fixture, checked
+    against what `engine/reference/legacy.gs` produced (D.4).
+- **Privacy:** generated scripts are offline artifacts. No phone-home, telemetry, API calls,
+  embedded credentials or URLs. Once delivered we are blind to them by design, and that is the
+  self-serve tier's guarantee (A.4).
+- **Known asymmetry, stated plainly:** the script tier has no snapshots, undo, drift repair,
+  audit, fleet view or cross-file rules. Its only undo is an optional `backup_tab` guard, which
+  the UI must not describe as equivalent to a snapshot (B, D.5).
+- **Naming:** the numeric-conditions branch was also called S7 before this patch arrived.
+  PATCH-004's milestones (S7a-S7e) are the Apps Script emitter; the numeric-conditions work is
+  referred to here as the numeric-conditions branch to avoid the collision.
+
+## The pivot (SPEC-PATCH-005): script generator only
+
+### `v0-managed-tier`: what the tag holds and why it was parked (2026-09-20)
+- **The tag** points at `main` at `2408546`, the last commit of the managed-tier build, pushed
+  to the remote before any pivot commit. Nothing is deleted; the parked work is one checkout away.
+- **What is in it:**
+  - S1: the server-side engine (sort, format, move, copy, consolidate, validate, dedupe, clear),
+    the sheets adapter, atomic batchUpdate writes with a stale re-read guard.
+  - S2 with PATCH-002 A: the fleet Drive changes feed, the Redis debounce, self-write
+    suppression, the fingerprint no-op gate, encrypted snapshots, undo, resume, the drift pause.
+  - S3: the onboarding agent (OpenAI, tool loop, on-demand skills, escalation), profiles and
+    masking, the proposal and approval gates.
+  - S5 (PATCH-003 B1/B2): the FastAPI API, the React Approvals and Enroll pages, the templated
+    readback, dry-run previews, the approval auto-run, the instruction-privacy rework.
+  - The full test suite for all of it: 597 backend and 12 frontend tests.
+  - Live evidence: every S1-S3 and B1/B2 exit criterion was verified against two real
+    spreadsheets, recorded in docs/BLOCKERS.md.
+- **Why parked:** PATCH-005 narrows the product to "describe it, preview it, download a script
+  you paste yourself". The managed tier's value - fleet visibility, drift repair, undo, audit -
+  needs exactly the machinery (server runtime, Google auth, registry, queue) that the new
+  privacy claim ("we never connect to your spreadsheets, and we keep nothing") rules out.
+- **What is NOT parked, and must not be:** ConfigSpec, the validator, `describe.py`, the
+  evaluator (now the oracle: it renders the preview and is the reference the generated script is
+  proven against) and the Apps Script emitter.
+- **Not included in the tag:** numeric conditions (branch `s7-numeric-conditions`, commit
+  `2cec203`) and the S7a emitter work in progress. Both survive the pivot, so they belong on
+  `main` rather than in the parked snapshot.
+
+### PATCH-005 amendments: the seven review findings (owner rulings, 2026-09-20)
+Each was raised in the pre-pivot review and accepted; they are now section I of the patch.
+
+1. **P4's Google dependency is test-only and fenced.** The live release gate has to read a real
+   test spreadsheet back, which needs the adapter read path and a service account - both on C's
+   parking list. They stay, in a test-only module behind the `live_gs` marker, with a test
+   asserting no product module imports them. Without the fence, "test-only" decays.
+2. **`engine/test/` and `engine/reference/legacy.gs` are protected proof infrastructure.** The
+   Apps Script mock is already anchored to the legacy golden files, which is why the offline
+   parity harness retargets it instead of introducing a second fake: two independent fakes can
+   share the same wrong assumption, and only one of them is tied to known-good output.
+3. **P1.5, the .xlsx reader, is its own milestone** with explicit exit criteria (values, fills,
+   font colours, strikethrough, merged cells, and the reference workbook's year-95637 date and
+   headerless column read without crashing).
+   - **Timezone is explicit input.** An .xlsx carries none and the preview needs one, so it is a
+     CLI flag and a UI selector defaulting to the browser's zone, printed in the preview header
+     ("overdue as of 20 Sep 2026, Asia/Kolkata"). Never inferred silently, because "overdue"
+     changes meaning with the zone.
+4. **G states the preview-fidelity limit:** the preview runs on the file as uploaded; a live
+   sheet may hold formulas, filters, conditional formatting, data validation or another
+   timezone, and can differ.
+5. **No server-side config storage, as a constraint.** The config is derived from user data
+   (header text and enum labels can be client names), so "we keep nothing" holds only if we
+   store none of it. A future "save your config" feature must change the claim first.
+6. **Session state:** memory only, no disk, hard TTL, maximum upload size, evicted on expiry
+   whether or not the user returns.
+7. **Two capability calls settled**, amending PATCH-004 B:
+   - **move/copy within one file are supported**, because "move completed rows to Archive" is
+     among the most common asks and never crosses files. **A destructive rule (move, clear,
+     dedupe) forces `backup_tab` on** in this tier, overriding D.5's default-off: with no
+     snapshots, the backup tab is the only undo there is, so it cannot be optional.
+   - **`schedule` triggers are supported at hourly granularity or coarser**, in the script's own
+     timezone; anything finer is refused. Apps Script does time-driven triggers natively and
+     "every night, archive dispatched rows" is a top-three instruction.
+8. **Clause coverage stays a mechanical diff** (D.2), not a second model call - the same
+   conclusion the sheet-4 forensics pointed to.
+
+### The parking commit: what left the build (2026-09-20)
+- **Removed from the active build** (all of it in `v0-managed-tier`): the API (`app/api`), the
+  workers and queue (`app/workers`), the ORM models and Alembic migrations, the Drive changes
+  feed, the write path and its helpers (`live.py`, `operations.py`, `registry.py`,
+  `snapshot_store.py`, `views.py`, `sheet_ref.py`), the React frontend, `docker-compose.yml`,
+  the managed-tier `cli.py`, and the tests that covered them.
+- **Fenced rather than removed** (amendment I.1): the sheets adapter and `google_http` moved to
+  `backend/tests/live/`, with `tests/test_google_fence.py` asserting that nothing under `app/`
+  imports them, Google's libraries, or the test package. The product cannot reach a spreadsheet
+  even by accident.
+- **Two decouplings were needed first, and both improved the design:**
+  - `plan_grid` (`app/services/planning.py`) plans a run against a grid already in memory. The
+    adapter-driven `prepare_run`/`commit_run` pair went with the write path, and the preview now
+    calls the planner directly, which is what PATCH-005 B.1 means by the evaluator being an
+    oracle rather than a runtime.
+  - The compile path records through a `CompileRecorder` (`app/agent/recorder.py`) instead of a
+    session factory. `MemoryRecorder` is the default and keeps profiles, metering and proposals
+    in the process, which is how I.5 ("no server-side config storage") is enforced structurally
+    rather than by discipline.
+- **Tests:** 523 pass with no Postgres, no Redis and no Google, in 17 s (previously 601 in 69 s
+  with a database). The compile-path tests were rewritten against the recorder; the
+  approval-gate tests (approve, reject, owner title) went with the registry they tested, and the
+  frontend readback fixture check went with the frontend. The B.6 lint, the Redacted tests and
+  the env-file guard all stay.
+- **Kept deliberately:** ConfigSpec and the validator, the evaluator and every rule, `describe`,
+  `preview`, the agent (profile, masking, skills, tool loop), the emitter, `engine/test` and
+  `engine/reference/legacy.gs` (proof infrastructure, amendment I.2).
+
+### Roadmap and two product defaults (owner, 2026-09-25)
+- The working breakdown from here to release is `docs/ROADMAP.md` (P1 → P5, per PATCH-005 F/I).
+- **Default trigger:** an instruction that does not say when to run compiles to `debounced`
+  (60 s quiet) on edits to the governed tabs; the generated menu always offers "Run now". The
+  readback states the timing, so the default is visible and overridable. Lands with P2.
+- **The paste-header-rows path (PATCH-005 D.1) is deferred until after P5**: without data rows
+  there is no meaningful preview, and the preview is the product.
+
+### P1: trigger wiring - the reference config emits whole (2026-09-25)
+- **What starts a rule mirrors the evaluator's `select_rules`, event by event.** The script
+  carries a `RULES` table (each rule's step function, trigger, watched columns, and the tabs it
+  applies to) and a small dispatcher: an edit runs the on_edit rules watching that tab and column
+  and marks debounced rules dirty; a one-minute trigger runs dirty rules once their quiet period
+  has passed; an hourly trigger runs scheduled rules due in the current hour, once per hour; `after`
+  rules follow their parent on the same tabs. Edits to a consolidate target start nothing.
+- **Triggers:** `installTrigger()` creates only what the config needs (edit, one-minute and
+  hourly triggers, plus open for the menu), running as the owner. It removes its own earlier
+  triggers and orphans left by replaced code, such as the legacy script's `onEditAutoSort`. The
+  menu has Run now, Pause and Resume. Pausing stops automatic runs only and locks nothing
+  (invariant 8); Run now still works while paused.
+- **Schedules** are parsed once, in Python (`app/services/cron.py`, standard Vixie semantics), and
+  emitted as explicit hour/day/month/weekday sets; the script never parses cron. They are
+  evaluated in the script's own timezone (PATCH-005 I.7). An hourly trigger fires at a minute
+  Google picks, so a schedule runs within its hour, not at its minute; the script says so, and
+  the P2 readback must too. An expression that cannot be read is refused as
+  `schedule_unreadable`.
+- **Two emitter bugs fixed along the way** (the evaluator was right both times):
+  - Consolidate read its sources alphabetically instead of in sheet order.
+  - The script wrote rule by rule, so a failing or guard-blocked rule left earlier writes in
+    place. Runs are now planned in memory and written only when every rule has succeeded
+    (invariant 5).
+- **Tests:** 11 trigger-parity tests, each killed by a targeted mutation of the template it
+  guards. The Run-now test on the unmodified reference config is D.4, offline. The variant-config
+  consolidate test it replaces is gone.
+- **Mock:** gained `everyHours`; the harness gained an `open` step and reports menus and triggers.
+  The legacy golden-file suite still passes (27/27). The divergence list is
+  `docs/MOCK-DIVERGENCES.md`, with the owner's back-port rule.
+- **Environment note:** Windows Application Control now blocks the venv's `python.exe` launcher.
+  Tests run with the base uv interpreter plus the venv's site-packages on `PYTHONPATH`.
+
+### P1: presentation as intent (2026-09-25)
+Implements the owner's ruling of 2026-09-20: the evaluator learns banding, widths and date formats.
+- **Model.** `Tab` gained three intent attributes: `number_formats` (per cell, shifting with row
+  inserts and deletes as validations do), `column_widths` (per column), and `banding` (theme
+  plus the block of rows it covers). Fonts, borders, merges and alignment are rendering and stay
+  unmodelled. `TabChange.changed` and the preview diff (`WriteNumberFormats`, `SetColumnWidth`,
+  `SetBanding`, counted as `presentation` in `OpSummary`) include them, so the preview cannot
+  silently drop a presentation change.
+- **Semantics** follow what Engine.gs and legacy.gs did, now written into the schema description
+  and `rules/consolidate.py`:
+  - banding over the data rows, with no header or footer band, and none when there are no rows
+  - `date_format` on every target column whose header contains DATE
+  - `match_source` copies the format of the first data cell of the date column in the first
+    source that has data rows. The date column is the `sort_like` rule's first date key, else the
+    source's first header containing DATE. With no such source it falls back to d/m/yyyy.
+  - widths are set only when the target tab is created, from `column_widths` (keys compared
+    trimmed and case-insensitively; a key already in canonical form wins a collision) or
+    `default_column_width`; after that the owner's own widths are kept.
+- **Ruled (owner, 2026-09-25): keep the DATE rule for now.** "A header containing DATE" is a name-based rule inherited from legacy,
+  not a declared column type. It matches the reference workbook exactly (DISPATCH DATE, INVOICE
+  DATE), but a column called "UPDATED" would also get a date format, since it contains "DATE".
+  A typed alternative would be a `date_columns` list in `Presentation`: additive, not breaking.
+  Revisit if the gauntlet (P5) shows a false match.
+- **Script.** The date format is planned with the rows (read from the source's first data cell);
+  the write phase removes old bandings before rebuilding, bands the data rows, formats the date
+  columns, and sets widths only on a newly created target.
+- **Parity** compares number formats per cell, widths per column, and the banding's theme and
+  range on every tab, in every parity test. Seven presentation tests were added, each
+  shown to fail under a targeted mutation of the script. Six evaluator unit tests were added.
+  The mock loader now accepts column widths and bandings; the golden-file suite still passes
+  (27/27).
+- The fenced live adapter refuses the new ops by name instead of skipping them. The one offline
+  test that drove it filters them out explicitly, since it only needs SUMMARY's values.
+
+### P1: the remaining templates - validate, copy, move, dedupe, clear (2026-09-25)
+Every action and trigger in the apps_script matrix is now emitted; `check_config` refuses only
+what the target never does (finer-than-hourly schedules, unreadable schedules) and destructive
+rules with the backup tab off.
+- **The backup tab is modelled in the evaluator** (`app/services/backup.py`), for the same reason
+  as presentation: what the script writes there must be parity-checked, not invented.
+  - Destructive rules record the rows they remove or overwrite (`RulePlan.backup`).
+  - When `guards.backup_tab` is on and the run succeeds, those rows go to a hidden `_backup` tab,
+    one per row: run start (to the second), rule, tab, row number, then the row's cells.
+  - **Proposed for the owner: `KEEP_RUNS = 10`.** PATCH-004 D.5 says "the last N runs" without
+    an N. It is one constant, emitted into the script's settings, and shown in the "no undo" line.
+  - `EvalContext.now` carries the run's start time; `Tab.hidden` joined the grid model.
+  - The script writes the backup before any other write.
+- **The script's in-memory tabs now follow the evaluator's grid through structural changes.**
+  Each tab records where every row stood at the start of the run, so colours read from the sheet
+  follow their rows. Inserted rows start with no formatting and no dropdowns (cleared
+  explicitly), removed rows take their formatting with them, and formatting covers rows an
+  earlier rule emptied but never rows that were removed. Sort stops at the last row with
+  content, as the evaluator does.
+- **Bugs found along the way (the evaluator was right each time):**
+  - Copy did not count toward `max_rows_per_run`. Copy is a guarded action; a move counts twice
+    (rows out plus rows in).
+  - `match_source` read the stale first row after a move had taken it out.
+  - The parity comparator never looked below the evaluator's grid, so a script painting one row
+    too many passed. It now requires those rows to be untouched.
+- **Tests:** 24 action-parity tests (`tests/test_apps_script_actions.py`), each killed by a
+  targeted mutation of the template it guards. The comparator now also checks dropdowns and the
+  hidden flag. 592 tests in total. The golden-file suite still passes (27/27).
+- **Open finding for the owner: formulas.** The mock has no formulas. The script reads values and
+  writes values back, so any rule that rewrites rows turns the formulas in those rows into plain
+  values: sort rewrites the whole data block, and clear rewrites whole cleared rows. The managed
+  tier avoided this by writing only changed rows. Options:
+  - (a) state it as a limit (G / I.4)
+  - (b) refuse sheets whose governed data rows contain formulas
+  - (c) write only the cells a rule changes: clear can do this through a range list, but sort
+    cannot, since moving a formula row by value is inherently lossy
+  Recommendation: (c) for clear plus (a) for sort, and the P1.5 xlsx reader flags formula columns
+  so the readback can warn.
+
+### Owner rulings on the templates (2026-09-25)
+- **`KEEP_RUNS = 10` for the backup tab: accepted.**
+- **Formulas: the recommendation is accepted**, and done:
+  - **Clear empties only the cells it blanks**, with one `RangeList.clearContent()` call, so
+    formulas anywhere else in the row survive.
+  - **Sort writes only the rows that change place.** A row that stays put keeps its formulas;
+    a formula in a row that moves is replaced by its result. That is inherent in moving rows by
+    value, and it is stated.
+  - **The stated limits are in the script's header**, for the actions the config uses: sort,
+    and move/copy (rows arrive in another tab as values). The header's "does not do" list is
+    retitled "What it does NOT do, and limits to know about", since the managed-service framing
+    was stale after the pivot. The same text goes into the P3 page's honest limits.
+  - **The P1.5 xlsx reader flags formula columns**, so the readback can warn before download.
+  - **The mock now models formulas.** A cell can hold one; writing a value or clearing the
+    content replaces it, which is Sheets' documented behaviour. It also supports
+    `getRangeList(...).clearContent()`. The golden-file suite still passes (27/27).
+  - Three tests prove which formulas survive, and each was killed by the mutation it guards.
+- **Found while doing it:** the script's planned writes shared arrays with the run's live
+  picture. So a sort's write could change if a later rule in the same run removed rows from that
+  tab. Each write now takes its own copy, and `test_a_sort_then_a_move_in_the_same_run` holds it.
+- **P1 is closed:** every action and trigger emits, offline parity is green on the unmodified
+  reference config, and the owner's decisions are in. Merged to main.

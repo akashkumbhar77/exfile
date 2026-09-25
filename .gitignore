@@ -5,3 +5,8 @@ __pycache__/
 .mypy_cache/
 .env
 var/
+
+# generated demo scripts only - never emitted fixtures or golden files, which are proof
+# infrastructure and must be committed (SPEC-PATCH-005 I.2)
+/demo/*.gs
+*.demo.gs

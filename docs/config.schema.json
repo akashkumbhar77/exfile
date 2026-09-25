@@ -39,6 +39,9 @@
               },
               {
                 "$ref": "#/$defs/ValueCondition"
+              },
+              {
+                "$ref": "#/$defs/NumericCondition"
               }
             ]
           },
@@ -76,6 +79,9 @@
               },
               {
                 "$ref": "#/$defs/ValueCondition"
+              },
+              {
+                "$ref": "#/$defs/NumericCondition"
               }
             ]
           },
@@ -187,6 +193,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "When"
@@ -291,6 +300,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "When"
@@ -544,6 +556,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "When"
@@ -932,6 +947,12 @@
     "Guards": {
       "additionalProperties": false,
       "properties": {
+        "backup_tab": {
+          "default": false,
+          "description": "Copy rows that move, dedupe or clear rules remove or overwrite to a hidden _backup tab, keeping the last 10 runs (services/backup.py). Forced on for generated scripts (PATCH-005 I.7); it is not a snapshot.",
+          "title": "Backup Tab",
+          "type": "boolean"
+        },
         "hold_column": {
           "default": "!hold",
           "minLength": 1,
@@ -1053,6 +1074,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "When"
@@ -1091,6 +1115,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "Not"
@@ -1100,6 +1127,488 @@
         "not"
       ],
       "title": "NotCondition",
+      "type": "object"
+    },
+    "NumericAbs": {
+      "additionalProperties": false,
+      "properties": {
+        "abs": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NumericLiteral"
+            },
+            {
+              "$ref": "#/$defs/NumericColumn"
+            },
+            {
+              "$ref": "#/$defs/NumericAdd"
+            },
+            {
+              "$ref": "#/$defs/NumericSubtract"
+            },
+            {
+              "$ref": "#/$defs/NumericMultiply"
+            },
+            {
+              "$ref": "#/$defs/NumericDivide"
+            },
+            {
+              "$ref": "#/$defs/NumericAbs"
+            },
+            {
+              "$ref": "#/$defs/NumericRound"
+            }
+          ],
+          "title": "Abs"
+        }
+      },
+      "required": [
+        "abs"
+      ],
+      "title": "NumericAbs",
+      "type": "object"
+    },
+    "NumericAdd": {
+      "additionalProperties": false,
+      "properties": {
+        "add": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NumericLiteral"
+              },
+              {
+                "$ref": "#/$defs/NumericColumn"
+              },
+              {
+                "$ref": "#/$defs/NumericAdd"
+              },
+              {
+                "$ref": "#/$defs/NumericSubtract"
+              },
+              {
+                "$ref": "#/$defs/NumericMultiply"
+              },
+              {
+                "$ref": "#/$defs/NumericDivide"
+              },
+              {
+                "$ref": "#/$defs/NumericAbs"
+              },
+              {
+                "$ref": "#/$defs/NumericRound"
+              }
+            ]
+          },
+          "minItems": 2,
+          "title": "Add",
+          "type": "array"
+        }
+      },
+      "required": [
+        "add"
+      ],
+      "title": "NumericAdd",
+      "type": "object"
+    },
+    "NumericColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "description": "A canonical header name.",
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "NumericColumn",
+      "type": "object"
+    },
+    "NumericComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NumericLiteral"
+            },
+            {
+              "$ref": "#/$defs/NumericColumn"
+            },
+            {
+              "$ref": "#/$defs/NumericAdd"
+            },
+            {
+              "$ref": "#/$defs/NumericSubtract"
+            },
+            {
+              "$ref": "#/$defs/NumericMultiply"
+            },
+            {
+              "$ref": "#/$defs/NumericDivide"
+            },
+            {
+              "$ref": "#/$defs/NumericAbs"
+            },
+            {
+              "$ref": "#/$defs/NumericRound"
+            }
+          ],
+          "title": "Left"
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "not_between"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "right": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/NumericLiteral"
+                },
+                {
+                  "$ref": "#/$defs/NumericColumn"
+                },
+                {
+                  "$ref": "#/$defs/NumericAdd"
+                },
+                {
+                  "$ref": "#/$defs/NumericSubtract"
+                },
+                {
+                  "$ref": "#/$defs/NumericMultiply"
+                },
+                {
+                  "$ref": "#/$defs/NumericDivide"
+                },
+                {
+                  "$ref": "#/$defs/NumericAbs"
+                },
+                {
+                  "$ref": "#/$defs/NumericRound"
+                }
+              ]
+            },
+            {
+              "$ref": "#/$defs/NumericRange"
+            }
+          ],
+          "title": "Right"
+        }
+      },
+      "required": [
+        "left",
+        "op",
+        "right"
+      ],
+      "title": "NumericComparison",
+      "type": "object"
+    },
+    "NumericCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "numeric": {
+          "$ref": "#/$defs/NumericComparison"
+        }
+      },
+      "required": [
+        "numeric"
+      ],
+      "title": "NumericCondition",
+      "type": "object"
+    },
+    "NumericDivide": {
+      "additionalProperties": false,
+      "properties": {
+        "divide": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NumericLiteral"
+              },
+              {
+                "$ref": "#/$defs/NumericColumn"
+              },
+              {
+                "$ref": "#/$defs/NumericAdd"
+              },
+              {
+                "$ref": "#/$defs/NumericSubtract"
+              },
+              {
+                "$ref": "#/$defs/NumericMultiply"
+              },
+              {
+                "$ref": "#/$defs/NumericDivide"
+              },
+              {
+                "$ref": "#/$defs/NumericAbs"
+              },
+              {
+                "$ref": "#/$defs/NumericRound"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Divide",
+          "type": "array"
+        }
+      },
+      "required": [
+        "divide"
+      ],
+      "title": "NumericDivide",
+      "type": "object"
+    },
+    "NumericLiteral": {
+      "additionalProperties": false,
+      "properties": {
+        "literal": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Literal"
+        }
+      },
+      "required": [
+        "literal"
+      ],
+      "title": "NumericLiteral",
+      "type": "object"
+    },
+    "NumericMultiply": {
+      "additionalProperties": false,
+      "properties": {
+        "multiply": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NumericLiteral"
+              },
+              {
+                "$ref": "#/$defs/NumericColumn"
+              },
+              {
+                "$ref": "#/$defs/NumericAdd"
+              },
+              {
+                "$ref": "#/$defs/NumericSubtract"
+              },
+              {
+                "$ref": "#/$defs/NumericMultiply"
+              },
+              {
+                "$ref": "#/$defs/NumericDivide"
+              },
+              {
+                "$ref": "#/$defs/NumericAbs"
+              },
+              {
+                "$ref": "#/$defs/NumericRound"
+              }
+            ]
+          },
+          "minItems": 2,
+          "title": "Multiply",
+          "type": "array"
+        }
+      },
+      "required": [
+        "multiply"
+      ],
+      "title": "NumericMultiply",
+      "type": "object"
+    },
+    "NumericRange": {
+      "additionalProperties": false,
+      "properties": {
+        "max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NumericLiteral"
+            },
+            {
+              "$ref": "#/$defs/NumericColumn"
+            },
+            {
+              "$ref": "#/$defs/NumericAdd"
+            },
+            {
+              "$ref": "#/$defs/NumericSubtract"
+            },
+            {
+              "$ref": "#/$defs/NumericMultiply"
+            },
+            {
+              "$ref": "#/$defs/NumericDivide"
+            },
+            {
+              "$ref": "#/$defs/NumericAbs"
+            },
+            {
+              "$ref": "#/$defs/NumericRound"
+            }
+          ],
+          "title": "Max"
+        },
+        "min": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NumericLiteral"
+            },
+            {
+              "$ref": "#/$defs/NumericColumn"
+            },
+            {
+              "$ref": "#/$defs/NumericAdd"
+            },
+            {
+              "$ref": "#/$defs/NumericSubtract"
+            },
+            {
+              "$ref": "#/$defs/NumericMultiply"
+            },
+            {
+              "$ref": "#/$defs/NumericDivide"
+            },
+            {
+              "$ref": "#/$defs/NumericAbs"
+            },
+            {
+              "$ref": "#/$defs/NumericRound"
+            }
+          ],
+          "title": "Min"
+        }
+      },
+      "required": [
+        "min",
+        "max"
+      ],
+      "title": "NumericRange",
+      "type": "object"
+    },
+    "NumericRound": {
+      "additionalProperties": false,
+      "properties": {
+        "round": {
+          "$ref": "#/$defs/NumericRoundArgs"
+        }
+      },
+      "required": [
+        "round"
+      ],
+      "title": "NumericRound",
+      "type": "object"
+    },
+    "NumericRoundArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "digits": {
+          "default": 0,
+          "maximum": 12,
+          "minimum": 0,
+          "title": "Digits",
+          "type": "integer"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NumericLiteral"
+            },
+            {
+              "$ref": "#/$defs/NumericColumn"
+            },
+            {
+              "$ref": "#/$defs/NumericAdd"
+            },
+            {
+              "$ref": "#/$defs/NumericSubtract"
+            },
+            {
+              "$ref": "#/$defs/NumericMultiply"
+            },
+            {
+              "$ref": "#/$defs/NumericDivide"
+            },
+            {
+              "$ref": "#/$defs/NumericAbs"
+            },
+            {
+              "$ref": "#/$defs/NumericRound"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "NumericRoundArgs",
+      "type": "object"
+    },
+    "NumericSubtract": {
+      "additionalProperties": false,
+      "properties": {
+        "subtract": {
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/NumericLiteral"
+              },
+              {
+                "$ref": "#/$defs/NumericColumn"
+              },
+              {
+                "$ref": "#/$defs/NumericAdd"
+              },
+              {
+                "$ref": "#/$defs/NumericSubtract"
+              },
+              {
+                "$ref": "#/$defs/NumericMultiply"
+              },
+              {
+                "$ref": "#/$defs/NumericDivide"
+              },
+              {
+                "$ref": "#/$defs/NumericAbs"
+              },
+              {
+                "$ref": "#/$defs/NumericRound"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Subtract",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subtract"
+      ],
+      "title": "NumericSubtract",
       "type": "object"
     },
     "OnEditSpec": {
@@ -1155,7 +1664,7 @@
     },
     "Presentation": {
       "additionalProperties": false,
-      "description": "Cosmetics for a consolidate target. The evaluator applies title/header colours; banding,\nwidths and date_format are not applied by the server engine yet (docs/BLOCKERS.md).",
+      "description": "How a consolidate target looks. All of it is evaluated (services/rules/consolidate.py):\ntitle and header colours, banding over the data rows, `date_format` on every column whose\nheader contains DATE, and column widths when the target tab is first created.",
       "properties": {
         "banding": {
           "anyOf": [
@@ -1194,7 +1703,7 @@
         },
         "date_format": {
           "default": "match_source",
-          "description": "'match_source' copies the first source dispatch-date format; otherwise a Sheets number format.",
+          "description": "Number format for every target column whose header contains DATE. 'match_source' copies the format of the first source's date column (sort_like's first date key); otherwise a Sheets number format.",
           "minLength": 1,
           "title": "Date Format",
           "type": "string"
@@ -1311,6 +1820,9 @@
             },
             {
               "$ref": "#/$defs/ValueCondition"
+            },
+            {
+              "$ref": "#/$defs/NumericCondition"
             }
           ],
           "title": "When"
