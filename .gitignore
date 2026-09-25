@@ -10,3 +10,6 @@ var/
 # infrastructure and must be committed (SPEC-PATCH-005 I.2)
 /demo/*.gs
 *.demo.gs
+
+# Real workbooks for the reader's opt-in checks (REFERENCE_XLSX): they hold real data, never commit.
+/samples/

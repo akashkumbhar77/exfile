@@ -43,18 +43,21 @@ reference config.
       cells, sort only the rows that move, the rest is a stated limit (DECISIONS, 2026-09-25).
 - [x] Close: merge `s7-numeric-conditions` to main.
 
-## P1.5 — read the uploaded sheet
+## P1.5 — read the uploaded sheet (closed 2026-09-25)
 
 Exit (PATCH-005 I.3): values, fills, font colours, strikethrough and merged cells read into the
 evaluator's grid; the reference workbook's two known bad cells (the year-95637 date, the
 headerless column) read without crashing.
 
-- [ ] `.xlsx` → `Grid`, fidelity-tested against the reference workbook.
-- [ ] Header row / data start detected, or asked for when ambiguous.
-- [ ] The grid ends at the last row with content (like `getLastRow`); trailing formatted-but-empty
+- [x] `.xlsx` → `Grid` (`app/adapters/xlsx_reader.py`), round-trip tested on the reference layout.
+- [x] **Exit:** the owner's real export (`samples/reference.xlsx`, git-ignored) reads without
+      crashing; the year-95637 date is reported as a warning; the reference rules agree between
+      script and evaluator on the real layout (both opt-in via `REFERENCE_XLSX`).
+- [x] Header row detected on uploads (`profile.detect_header_row`); an override flag is P2's CLI.
+- [x] The grid ends at the last row with content (like `getLastRow`); trailing formatted-but-empty
       rows are not part of it (MOCK-DIVERGENCES #14).
-- [ ] Formula cells are detected and reported, so the readback can warn about rewritten rows.
-- [ ] Timezone is explicit input, never inferred.
+- [x] Formula cells are detected (`TabMeta.formula_cells`), so the readback can warn (P2).
+- [x] Timezone is explicit input, never inferred (`read_xlsx(..., timezone=)`, validated).
 
 ## P2 — end to end on the command line
 
