@@ -99,6 +99,14 @@ def test_a_config_whose_headers_changed_previews_as_paused() -> None:
     assert result.preview["status"] == "PAUSED_DRIFT"
 
 
+def test_a_provider_problem_is_not_blamed_on_the_instruction() -> None:
+    class Unreachable(ScriptedLlm):
+        def available_models(self) -> set[str]:
+            raise RuntimeError("401")
+    result = generate(UPLOAD, timezone=TZ, instruction=INSTRUCTION, llm=Unreachable({}), plan=PLAN, now=NOW)
+    assert result.status == "MODEL_UNAVAILABLE" and "could not reach" in result.reason
+
+
 def test_a_broken_config_file_is_explained() -> None:
     raw = load_reference_raw()
     raw["rules"][0]["action"] = "shuffle"

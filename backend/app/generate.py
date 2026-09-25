@@ -38,7 +38,10 @@ SHEET_REF = "uploaded-workbook"  # never the file name: it rides along in the sc
 ORG = "self-serve"
 REWRITING_ACTIONS = set(capabilities.FORMULA_LIMITS)  # clear touches only the cells it blanks
 
-Status = Literal["OK", "DECLINED", "REFUSED", "INVALID_CONFIG"]
+Status = Literal["OK", "DECLINED", "REFUSED", "INVALID_CONFIG", "MODEL_UNAVAILABLE"]
+
+# onboarding's reasons when the provider, not the instruction, is the problem
+_PROVIDER_PROBLEMS = ("could not reach the LLM provider", "model(s) ")
 
 
 @dataclass
@@ -80,7 +83,8 @@ def generate(upload: bytes, *, timezone: str, instruction: str | None = None,
         result = onboard(MemoryRecorder(), None, llm, plan, ORG, SHEET_REF, instruction, now=now,
                          progress=progress, grid=grid)
         if result.config is None:
-            return Generated("DECLINED", reason=result.reason, warnings=read.warnings)
+            status: Status = "MODEL_UNAVAILABLE" if result.reason.startswith(_PROVIDER_PROBLEMS) else "DECLINED"
+            return Generated(status, reason=result.reason, warnings=read.warnings)
         config = result.config
 
     emitted = emit(config, workbook=grid.workbook, generated_at=now)

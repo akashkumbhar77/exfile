@@ -124,7 +124,10 @@ def _error(message: str) -> int:
 def _report_failure(result: Generated) -> int:
     headline = {"DECLINED": "No script: the instruction could not be turned into rules.",
                 "REFUSED": "No script: the rules need something a generated script cannot do.",
-                "INVALID_CONFIG": "No script: the config file cannot be used."}.get(result.status, "No script.")
+                "INVALID_CONFIG": "No script: the config file cannot be used.",
+                "MODEL_UNAVAILABLE": "No script: the model provider could not be used (nothing was compiled). "
+                                     "Check the API key in backend/.env, or reuse a config with --config."
+                }.get(result.status, "No script.")
     _say(headline)
     _say(f"  {result.reason}")
     _print_warnings(result)
