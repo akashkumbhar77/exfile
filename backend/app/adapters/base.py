@@ -39,6 +39,9 @@ class StaticRegistry:
 class TabMeta:
     # column (0-based) -> number-format pattern of the date cells seen in it at read time
     date_patterns: Mapping[int, str] = field(default_factory=dict)
+    # 1-based (row, col) of cells holding a formula: a rule that rewrites the row replaces it
+    formula_cells: frozenset[tuple[int, int]] = frozenset()
+    merged: tuple[str, ...] = ()  # merged ranges in A1 notation, e.g. "A1:H1"
 
 
 @dataclass(repr=False)
