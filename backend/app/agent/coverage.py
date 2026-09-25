@@ -46,6 +46,12 @@ ON_EDIT = re.compile(r"\b(as soon as|immediately|instantly|right away|"
                      r"when(ever)? [^.;]{0,40}?\b(edit|chang|updat|typ|enter|set)\w*)")
 
 
+def names_timing(instruction: str) -> bool:
+    """Whether the instruction says anything about when rules should run."""
+    text = instruction.lower()
+    return any(p.search(text) for p in (SCHEDULE, TOO_OFTEN, ON_EDIT))
+
+
 @dataclass(frozen=True)
 class Mention:
     kind: Kind

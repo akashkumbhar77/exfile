@@ -1122,3 +1122,28 @@ the preview ("If it ran now (as of 25 Sep 2026, Asia/Kolkata)"), the limits, and
   there now". That row is `SUMMARY!P77` (INVOICE NO), which the old summary holds as text while
   the source holds a number.
 - **Tests:** 12 for generate and the CLI (scripted model), 7 for coverage, 6 for schedule wording.
+
+### P2 exit: live compile on the real workbook (2026-09-25)
+The owner authorised a live compile of the reference instruction ("Sort each tab by status stage
+then dispatch date, colour rows by status, highlight overdue in-process rows, and keep a locked
+SUMMARY of all tabs") on the real export. The first try failed on an expired API key, which is
+now reported as a provider problem rather than blamed on the instruction; the owner replaced
+the key. Output was checked without printing any row contents.
+- **It works end to end:** accepted on the first attempt on `gpt-5-mini`, in about 1.5 minutes;
+  readback, coverage ("everything you mentioned is used"), file warnings, preview, limits, and
+  the `.gs` and config written.
+- **The stages fit the real labels:** every row falls in a named stage (63/4/9/3/3, one blank),
+  the same split as the hand-written legacy rules; nothing sorts to "unknown".
+- **Finding 1, now fixed: the model ignored the default-timing ruling.** With no timing said, it
+  made the sort run on edits of four columns. The prompt alone did not hold, so the compile now
+  applies the default itself when the instruction names no timing (the same phrase detection
+  coverage uses). The server already owns other parts of a proposal (header fingerprints), so
+  this follows a precedent. The owner sees it under "Chosen for you". Confirmed on a second live
+  run: every rule that does not follow another runs a minute after edits stop.
+- **Finding 2, for P5: an under-specified sentence varies between runs.** "Colour rows by status"
+  names no colours, and the two runs chose different palettes (and the second named its stages
+  after the sheet's "A. IN PROCESS"-style labels). Both are faithful to the words; the readback
+  shows the choice and revising the sentence is the product's main loop. P5 will score
+  run-to-run stability.
+- The preview on the real file reports rebuilt SUMMARY rows by how many differ, and the
+  differences follow from the new colours.

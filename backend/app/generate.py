@@ -55,6 +55,7 @@ class Generated:
     preview: dict[str, Any] | None = None
     warnings: list[str] = field(default_factory=list)   # about the upload: addresses only (B.6)
     limits: list[str] = field(default_factory=list)     # what the script does not do, never softened
+    notes: list[str] = field(default_factory=list)      # what the compile chose on the owner's behalf
 
     @property
     def unmapped(self) -> list[Mention]:
@@ -71,6 +72,7 @@ def generate(upload: bytes, *, timezone: str, instruction: str | None = None,
     read = read_xlsx(upload, timezone=timezone)
     grid = read.grid
 
+    notes: list[str] = []
     if config_json is not None:
         loaded = _load_config(config_json, grid)
         if isinstance(loaded, str):
@@ -86,6 +88,7 @@ def generate(upload: bytes, *, timezone: str, instruction: str | None = None,
             status: Status = "MODEL_UNAVAILABLE" if result.reason.startswith(_PROVIDER_PROBLEMS) else "DECLINED"
             return Generated(status, reason=result.reason, warnings=read.warnings)
         config = result.config
+        notes = result.notes
 
     emitted = emit(config, workbook=grid.workbook, generated_at=now)
     if not emitted.ok:
@@ -99,6 +102,7 @@ def generate(upload: bytes, *, timezone: str, instruction: str | None = None,
         preview=compute_preview(grid, config, now=now),
         warnings=read.warnings + formula_warnings(config, grid),
         limits=[*capabilities.ABSENT_BY_DESIGN.values(), *capabilities.formula_limits(config)],
+        notes=notes,
     )
 
 

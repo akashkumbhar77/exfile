@@ -26,6 +26,7 @@ from typing import Any
 
 from app.adapters.base import Adapter, Grid
 from app.emitters import capabilities
+from app.agent.coverage import names_timing
 from app.agent.llm import LlmClient, LlmError, LlmReply, parse_args, tool_spec
 from app.agent.profile import build_profile
 from app.agent.skills import catalogue_text, render
@@ -46,6 +47,7 @@ PROMPTS = Path(__file__).parent / "prompts"
 PROMPT_VERSION = "onboarding-v3.2"  # 3.2: generated-script triggers and default timing
 SKILLS_PROMPT_VERSION = "onboarding-v4.2-skills"  # 4.2: generated-script triggers and default timing
 DECLINE_PREFIX = "CANNOT:"
+DEFAULT_TRIGGER: dict[str, Any] = {"debounced": {"quiet_seconds": 60}}
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ class OnboardingResult:
     report: DryRunReport | None = None
     failures: list[str] = field(default_factory=list)
     model: str | None = None
+    notes: list[str] = field(default_factory=list)  # what the compile decided for the owner
 
 
 def system_prompt(use_skills: bool = False) -> str:
@@ -123,6 +126,9 @@ class _Session:
     use_skills: bool = False
     progress: Callable[[str], None] = field(default=lambda _state: None)
     reviewed_targets: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Owner decision 2026-09-25: when the instruction does not say when, the compile applies the
+    # default itself (the prompt asks for it too, but a live model did not follow it).
+    default_timing: bool = False
 
     @property
     def prompt_version(self) -> str:
@@ -175,6 +181,18 @@ class _Session:
                 raise _Attempt(f"schema_hashes: tab {tab_name!r} does not exist; tabs are {tab_names}")
             filled[str(tab_name)] = compute_schema_hash(tab.row(header_row))
         raw["schema_hashes"] = filled
+        if self.default_timing:
+            changed = [r.get("id") for r in raw.get("rules", []) if isinstance(r, dict)
+                       and isinstance(r.get("trigger"), dict) and "after" not in r["trigger"]
+                       and r["trigger"] != DEFAULT_TRIGGER]
+            for rule in raw.get("rules", []):
+                if isinstance(rule, dict) and rule.get("id") in changed:
+                    rule["trigger"] = dict(DEFAULT_TRIGGER)
+            if changed:
+                names = ", ".join(str(c) for c in changed)
+                notes.append(f"The instruction does not say when to run, so rule{'s' if len(changed) > 1 else ''} "
+                             f"{names} run{'' if len(changed) > 1 else 's'} a minute after edits stop (the "
+                             "default). Say when in the instruction to change it.")
 
         self.progress("validating")
         result = validate_config(raw)
@@ -230,7 +248,8 @@ class _Session:
         })
         config_id, version = proposed.id, proposed.version
         self.accepted = OnboardingResult("PENDING_APPROVAL", self.session_id, config_id=config_id,
-                                         config_version=version, config=config, report=report, model=model)
+                                         config_version=version, config=config, report=report, model=model,
+                                         notes=notes)
         return json.dumps({"ok": True, "stored_as": "PENDING_APPROVAL", "dry_run": summary})
 
     def review_target_renames(self, targets: dict[str, Any]) -> list[dict[str, Any]]:
@@ -348,7 +367,8 @@ def onboard(recorder: CompileRecorder, adapter: Adapter | None, llm: LlmClient, 
                      "LLM_ESCALATION_MODEL", [])
 
     sess = _Session(recorder, adapter, llm, org_id, sheet_pk, sheet_ref, grid, profile, session_id, now,
-                    use_skills=plan.use_skills, progress=report_progress)
+                    use_skills=plan.use_skills, progress=report_progress,
+                    default_timing=not names_timing(instruction))
     sess.messages = [
         {"role": "system", "content": system_prompt(plan.use_skills)},
         {"role": "system", "content": "Workbook profile:\n" + json.dumps(profile, ensure_ascii=False)},

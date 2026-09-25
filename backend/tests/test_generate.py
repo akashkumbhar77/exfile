@@ -173,3 +173,24 @@ def test_the_cli_needs_a_timezone(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--tz" in capsys.readouterr().err
 
 
+
+
+def test_when_the_instruction_does_not_say_when_the_default_timing_is_applied() -> None:
+    """Owner decision 2026-09-25: rules that do not follow another run a minute after edits stop.
+    A live model ignored the prompt's version of this, so the compile applies it."""
+    llm = scripted(call("propose_config", {"config": compiled_reference()}))  # sort is on_edit here
+    result = generate(UPLOAD, timezone=TZ, instruction=INSTRUCTION, llm=llm, plan=PLAN, now=NOW)
+    assert result.config is not None
+    triggers = {r.id: r.trigger.model_dump(by_alias=True) for r in result.config.rules}
+    assert triggers == {"sort_by_stage": {"debounced": {"quiet_seconds": 60}},
+                        "status_formatting": {"after": "sort_by_stage"},
+                        "summary": {"debounced": {"quiet_seconds": 60}}}
+    assert any("does not say when" in n for n in result.notes), "the owner is told, not just the model"
+
+
+def test_when_the_instruction_says_when_the_model_choice_stands() -> None:
+    llm = scripted(call("propose_config", {"config": compiled_reference()}))
+    result = generate(UPLOAD, timezone=TZ, llm=llm, plan=PLAN, now=NOW,
+                      instruction="As soon as a status changes, " + INSTRUCTION.lower())
+    assert result.config is not None
+    assert "on_edit" in result.config.rules[0].trigger.model_dump(by_alias=True)

@@ -59,7 +59,7 @@ headerless column) read without crashing.
 - [x] Formula cells are detected (`TabMeta.formula_cells`), so the readback can warn (P2).
 - [x] Timezone is explicit input, never inferred (`read_xlsx(..., timezone=)`, validated).
 
-## P2 — end to end on the command line (built; exit waits on one live compile)
+## P2 — end to end on the command line (closed 2026-09-25)
 
 Exit: `generate --file X.xlsx --instruction "..." --tz Asia/Kolkata` writes the `.gs` and
 `config.json`, and prints the readback, clause coverage and preview summary.
@@ -74,8 +74,8 @@ Exit: `generate --file X.xlsx --instruction "..." --tz Asia/Kolkata` writes the 
 - [x] Re-uploading `config.json` regenerates without the instruction (D.5).
 - [x] The compiler applies decision 1 (default trigger) and says so in the readback.
 - [x] Formula columns on governed tabs are warned about, by column letter.
-- [ ] **Exit:** one live compile of a real instruction on the real workbook (owner's go-ahead:
-      it sends the instruction and masked samples to the model provider).
+- [x] **Exit:** live compile of the reference instruction on the real workbook (owner's go-ahead),
+      first attempt on the primary model, ~1.5 min; script and config written.
 
 ## P3 — the web page
 
@@ -101,6 +101,9 @@ reproduces the evaluator's preview exactly.
 
 Exit: 8–10 structurally different `.xlsx` files, each with its owner's own sentence, scored for
 schema coverage, compile success and intent match, written up in `docs/GAUNTLET.md`.
+
+- [ ] Also score run-to-run stability: compile each sentence twice. P2's live runs showed an
+      under-specified sentence ("colour rows by status") gets different colours each time.
 
 ## After P5
 

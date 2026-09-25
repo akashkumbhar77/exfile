@@ -144,6 +144,11 @@ def _print(result: Generated, tz: str, rows: int) -> None:
     for line in result.readback.lines():
         _say(line)
 
+    if result.notes:
+        _section("Chosen for you")
+        for note in result.notes:
+            _say(f"  - {note}")
+
     if result.coverage:
         unmapped = result.unmapped
         _section("Check these" if unmapped else "Everything you mentioned is used")
