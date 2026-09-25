@@ -70,7 +70,7 @@ def test_triggers_and_details() -> None:
     ])
     a, b = (rule_text(r, i, Scope(cfg)) for i, r in enumerate(cfg.rules, 1))
     assert a.when == "45 seconds after edits stop" and "DISPATCH DATE is after 2026-01-31" in a.headline
-    assert b.when == "on the schedule “0 7 * * 1” (cron)" and "STATUS contains “hold”" in b.headline
+    assert b.when == "every Monday, once between 07:00 and 08:00, at a minute Google picks, "                      "in the script's timezone" and "STATUS contains “hold”" in b.headline
     assert [x.text for x in b.details] == ["A row is copied only once, identified by STATUS."]
 
 

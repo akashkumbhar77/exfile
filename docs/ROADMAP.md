@@ -59,20 +59,23 @@ headerless column) read without crashing.
 - [x] Formula cells are detected (`TabMeta.formula_cells`), so the readback can warn (P2).
 - [x] Timezone is explicit input, never inferred (`read_xlsx(..., timezone=)`, validated).
 
-## P2 — end to end on the command line
+## P2 — end to end on the command line (closed 2026-09-25)
 
 Exit: `generate --file X.xlsx --instruction "..." --tz Asia/Kolkata` writes the `.gs` and
 `config.json`, and prints the readback, clause coverage and preview summary.
 
-- [ ] Profile → mask (B.7) → compile → validate on an uploaded grid, no Google, no storage.
-- [ ] Readback plus the mechanical clause-coverage diff (D.2): each clause of the instruction and
+- [x] Profile → mask (B.7) → compile → validate on an uploaded grid, no Google, no storage.
+- [x] Readback plus the mechanical clause-coverage diff (D.2): each clause of the instruction and
       the rule that covers it, or "not covered".
-- [ ] Before/after preview from the evaluator, headed with the date and timezone.
-- [ ] Schedules read back in words, including that they run within the named hour, not at
+- [x] Before/after preview from the evaluator, headed with the date and timezone.
+- [x] Schedules read back in words, including that they run within the named hour, not at
       its minute (MOCK-DIVERGENCES #3).
-- [ ] Refusals in the user's terms ("every 5 minutes isn't possible; hourly is the finest").
-- [ ] Re-uploading `config.json` regenerates without the instruction (D.5).
-- [ ] The compiler applies decision 1 (default trigger) and says so in the readback.
+- [x] Refusals in the user's terms ("every 5 minutes isn't possible; hourly is the finest").
+- [x] Re-uploading `config.json` regenerates without the instruction (D.5).
+- [x] The compiler applies decision 1 (default trigger) and says so in the readback.
+- [x] Formula columns on governed tabs are warned about, by column letter.
+- [x] **Exit:** live compile of the reference instruction on the real workbook (owner's go-ahead),
+      first attempt on the primary model, ~1.5 min; script and config written.
 
 ## P3 — the web page
 
@@ -98,6 +101,9 @@ reproduces the evaluator's preview exactly.
 
 Exit: 8–10 structurally different `.xlsx` files, each with its owner's own sentence, scored for
 schema coverage, compile success and intent match, written up in `docs/GAUNTLET.md`.
+
+- [ ] Also score run-to-run stability: compile each sentence twice. P2's live runs showed an
+      under-specified sentence ("colour rows by status") gets different colours each time.
 
 ## After P5
 

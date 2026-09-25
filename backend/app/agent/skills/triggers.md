@@ -17,6 +17,11 @@ schema_defs: [OnEditTrigger, OnEditSpec, AfterTrigger, DebouncedTrigger, Debounc
   `VIP?`, or editing that column would never recolour.
 - `after` chains may not form cycles, and must reference an existing rule id.
 - Rule ids are lowercase `snake_case`.
-- The platform also re-runs edit-driven rules (on_edit and debounced) whenever the file
-  changes, so an organized sheet stays organized. The trigger choice mainly expresses intent
-  and ordering.
+- **When the instruction does not say when rules should run**, give each rule that does not
+  follow another `{"debounced": {"quiet_seconds": 60}}` (it runs a minute after edits stop), and
+  chain the rest with `after`. The readback states the timing, so the owner can change it.
+- The output is an Apps Script the owner installs. It runs rules on edits by people (not on
+  changes made by other scripts or imports), a minute or so after a debounce's quiet period, and
+  on schedules checked once an hour: a cron minute field must be ONE number, and the rule runs
+  once within that hour. Anything more frequent than hourly cannot be done; if the instruction
+  explicitly asks for it, reply `CANNOT:` with a plain explanation instead of proposing.

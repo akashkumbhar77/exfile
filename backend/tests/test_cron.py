@@ -61,3 +61,16 @@ def test_day_of_month_or_day_of_week_when_both_are_restricted() -> None:
 def test_unreadable_expressions_are_rejected(expr: str) -> None:
     with pytest.raises(cron.CronError):
         cron.parse(expr)
+
+
+@pytest.mark.parametrize(("expr", "words"), [
+    ("0 9 * * *", "every day, once between 09:00 and 10:00"),
+    ("30 * * * *", "once every hour"),
+    ("0 9 * * MON-FRI", "every Monday to Friday, once between 09:00 and 10:00"),
+    ("0 18 * * 0,6", "every Saturday and Sunday, once between 18:00 and 19:00"),
+    ("0 7 1,15 * *", "on the 1st and 15th of the month, once between 07:00 and 08:00"),
+    ("0 9,13 * * *", "every day, once in each of these hours: 09:00 and 13:00"),
+])
+def test_schedules_in_words_never_promise_an_exact_minute(expr: str, words: str) -> None:
+    text = cron.describe(expr)
+    assert text.startswith(words) and text.endswith("at a minute Google picks, in the script's timezone")
