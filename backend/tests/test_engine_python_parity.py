@@ -245,7 +245,10 @@ def _engine_values(tab: dict[str, Any]) -> list[list[Any]]:
 
 
 def _py_fmt(f: CellFormat) -> tuple[str, str | None, bool]:
-    return ((f.font or "#000000").lower(), f.background.lower() if f.background else None, f.strike)
+    # Sheets reports an explicit white fill and no fill alike (#ffffff), and the mock dump maps
+    # both to None; an uploaded file can carry either.
+    background = f.background.lower() if f.background else None
+    return ((f.font or "#000000").lower(), None if background == "#ffffff" else background, f.strike)
 
 
 def _engine_fmt(c: dict[str, Any]) -> tuple[str, str | None, bool]:

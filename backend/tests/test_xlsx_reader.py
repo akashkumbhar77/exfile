@@ -235,3 +235,48 @@ def test_the_header_row_is_found_on_an_upload() -> None:
     for name in ("MACHINES", "SPARES"):
         tab = grid.workbook.tab(name)
         assert tab is not None and detect_header_row(tab) == 2, name
+
+
+@pytest.mark.skipif(not REAL, reason="set REFERENCE_XLSX to a local export of the reference workbook")
+def test_the_reference_rules_agree_on_the_real_layout() -> None:
+    """The reference rules on the owner's real layout (headers re-fingerprinted from the file): the
+    generated script and the evaluator produce the same sheet. Failures name cells, never values."""
+    from app.emitters.apps_script import emit
+    from app.services.conditions import EvalContext
+    from app.services.executor import execute_run
+    from app.services.grid import col_letter
+    from app.services.headers import build_view
+    from app.services.preflight import schema_hashes_for
+    from app.services.runner import RunEvent
+    from tests.test_apps_script_parity import run_generated
+    from tests.test_engine_python_parity import NODE, _engine_fmt, _engine_values, _py_fmt, _py_values
+
+    if NODE is None:
+        pytest.skip("Node.js not installed")
+    wb = read_xlsx(Path(REAL or "").read_bytes(), timezone=TZ).grid.workbook
+    raw = load_reference_raw()
+    probe = ConfigSpec.model_validate(raw)
+    governed = [t.name for t in wb.tabs if t.name != "SUMMARY" and build_view(t, probe).has("STATUS")]
+    raw["schema_hashes"] = schema_hashes_for(wb, governed, raw["header_row"])
+    config = ConfigSpec.model_validate(raw)
+    script = emit(config, workbook=wb).script
+    assert script is not None
+    py = execute_run(config, wb, RunEvent.manual(),
+                     EvalContext(run_id="real", today=date(2026, 9, 16), now=datetime(2026, 9, 16, 10)))
+    assert py.plan.status == "OK"
+    got = {t["name"]: t for t in run_generated(script, wb)["tabs"]}
+    assert list(got) == [t.name for t in py.workbook.tabs]
+    where: list[str] = []
+    for tab in py.workbook.tabs:
+        ev, pv = _engine_values(got[tab.name]), _py_values(tab)
+        for r in range(max(len(ev), len(pv))):
+            er, pr = (ev[r] if r < len(ev) else []), (pv[r] if r < len(pv) else [])
+            for c in range(max(len(er), len(pr))):
+                a, b = (er[c] if c < len(er) else None), (pr[c] if c < len(pr) else None)
+                if a != b and not (a in ("", None) and b in ("", None)):
+                    where.append(f"{tab.name}!{col_letter(c + 1)}{r + 1} value")
+                cell = got[tab.name]["cells"][r][c] if r < len(got[tab.name]["cells"]) and \
+                    c < len(got[tab.name]["cells"][r]) else None
+                if cell and r < tab.height and c < tab.width and _engine_fmt(cell) != _py_fmt(tab.formats[r][c]):
+                    where.append(f"{tab.name}!{col_letter(c + 1)}{r + 1} format")
+    assert not where, where[:20]

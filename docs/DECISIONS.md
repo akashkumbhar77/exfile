@@ -1065,3 +1065,23 @@ rules with the backup tab off.
   "automatic" colour and a missing one both mean the default).
 - **Exit is pending the owner's real export**, which is never committed: `samples/` is
   git-ignored, and `test_the_real_reference_workbook_reads` runs when `REFERENCE_XLSX` points at it.
+
+### P1.5 exit on the owner's real export (2026-09-25)
+The owner downloaded the reference workbook as .xlsx. It is kept at `samples/reference.xlsx`, is
+git-ignored, and was never printed: every check reported structure, counts and cell addresses
+only.
+- **It reads without crashing.** 7 tabs (SUMMARY, MACHINES, UNITS, RFB MOD, SPARES, BOUGHT-OUT,
+  LEGENDS); header row 2 detected on each; colours, number formats, dropdowns and one merged
+  banner per tab read; no formulas.
+- **The year-95637 date** is at `MACHINES!P50`, with its consolidated copy at `SUMMARY!Q82`.
+  Both are reported as warnings and read as numbers.
+- **The headerless column is not in this export:** no tab has data under a blank header, so it
+  was presumably fixed in the sheet. The generated test keeps covering the case.
+- **The reference rules agree on the real layout.** With headers re-fingerprinted from the
+  file, the generated script and the evaluator produce identical sheets on every tab (83
+  consolidated rows, real colours and number formats). The sheet is already organised by the
+  legacy script, so sort and format had nothing to move: this proves agreement on real data,
+  not reorganisation. It is kept as `test_the_reference_rules_agree_on_the_real_layout`
+  (opt-in, and reports cell addresses only).
+- **Comparator fix:** an explicit white fill in an upload and no fill are indistinguishable in
+  Sheets (the mock maps both to none), and the comparison now treats them alike.

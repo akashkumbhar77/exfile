@@ -43,15 +43,16 @@ reference config.
       cells, sort only the rows that move, the rest is a stated limit (DECISIONS, 2026-09-25).
 - [x] Close: merge `s7-numeric-conditions` to main.
 
-## P1.5 — read the uploaded sheet (built; exit waits on the real export)
+## P1.5 — read the uploaded sheet (closed 2026-09-25)
 
 Exit (PATCH-005 I.3): values, fills, font colours, strikethrough and merged cells read into the
 evaluator's grid; the reference workbook's two known bad cells (the year-95637 date, the
 headerless column) read without crashing.
 
 - [x] `.xlsx` → `Grid` (`app/adapters/xlsx_reader.py`), round-trip tested on the reference layout.
-- [ ] **Exit:** the owner's real export reads, with the bad cells as warnings: put it at
-      `samples/reference.xlsx` (ignored by git) and run with `REFERENCE_XLSX` set.
+- [x] **Exit:** the owner's real export (`samples/reference.xlsx`, git-ignored) reads without
+      crashing; the year-95637 date is reported as a warning; the reference rules agree between
+      script and evaluator on the real layout (both opt-in via `REFERENCE_XLSX`).
 - [x] Header row detected on uploads (`profile.detect_header_row`); an override flag is P2's CLI.
 - [x] The grid ends at the last row with content (like `getLastRow`); trailing formatted-but-empty
       rows are not part of it (MOCK-DIVERGENCES #14).
