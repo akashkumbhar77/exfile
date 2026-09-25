@@ -637,7 +637,8 @@ def _header(config: ConfigSpec, workbook: Workbook | None, generated_at: datetim
     described = describe_config(config, workbook)
     summaries = [wrap_comment(f"{r.number}. {r.headline} ({r.when}).", " *   ", " *      ")
                  for r in described.rules]
-    absent = [f" *   - {reason}" for reason in capabilities.ABSENT_BY_DESIGN.values()]
+    absent = [wrap_comment(f"- {reason}", " *   ", " *     ")
+              for reason in [*capabilities.ABSENT_BY_DESIGN.values(), *capabilities.formula_limits(config)]]
     return fill(
         "header.js", product=PRODUCT, generator=GENERATOR, config_version=config.config_version,
         generated_at=generated_at.strftime("%Y-%m-%d %H:%M UTC"),

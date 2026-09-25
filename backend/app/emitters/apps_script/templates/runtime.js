@@ -151,12 +151,6 @@ function viewFormats_(view) {
 var DEFAULT_FONT = '#000000';   // what Sheets reports for a cell nobody coloured
 var DEFAULT_FILL = '#ffffff';
 
-function writeValues_(view, values) {
-  return function () {
-    view.sheet.getRange(DATA_START_ROW, 1, values.length, view.lastCol).setValues(values);
-  };
-}
-
 function writeFormats_(view, plan) {
   return function () {
     var range = view.sheet.getRange(DATA_START_ROW, 1, plan.fonts.length, view.lastCol);
@@ -240,7 +234,7 @@ function deleteDataRows_(run, view, rows) {
 /** Writes only the given data rows (0-based, ascending), a block of consecutive rows at a time,
  *  so the other rows - and any formulas in them - are not touched. */
 function writeRows_(view, rows) {
-  var values = view.values;
+  var values = view.values.slice();   // as planned now: later rules may move rows in the live picture
   return function () {
     for (var s = 0; s < rows.length;) {
       var e = s;
@@ -250,6 +244,22 @@ function writeRows_(view, rows) {
       s = e + 1;
     }
   };
+}
+
+/** Empties the given cells (data row, column; both 0-based) in one call, leaving every other cell -
+ *  and any formula in it - as it is. */
+function clearCells_(view, cells) {
+  var a1 = [];
+  for (var i = 0; i < cells.length; i++) a1.push(columnLetter_(cells[i][1] + 1) + (DATA_START_ROW + cells[i][0]));
+  return function () {
+    view.sheet.getRangeList(a1).clearContent();
+  };
+}
+
+function columnLetter_(n) {
+  var out = '';
+  for (; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + (n - 1) % 26) + out;
+  return out;
 }
 
 // ---------------------------------------------------------------- the backup tab

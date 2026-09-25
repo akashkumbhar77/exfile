@@ -6,5 +6,5 @@
       } else if (${var_name}.rows.length) {
         for (var bc = 0; bc < ${var_name}.rows.length; bc++) backUp_(run, '${rule_id}', view, ${var_name}.rows[bc]);
         view.values = ${var_name}.values;
-        run.writes.push(writeRows_(view, ${var_name}.rows));
+        run.writes.push(clearCells_(view, ${var_name}.cells));   // only these cells: formulas elsewhere stay
       }

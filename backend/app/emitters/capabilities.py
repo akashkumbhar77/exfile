@@ -90,6 +90,21 @@ ABSENT_BY_DESIGN: dict[str, str] = {
 }
 
 
+# Limits that apply only when a config uses the action (owner ruling 2026-09-25, formulas). The
+# script reads values and writes values, so a formula survives only in cells it never rewrites.
+FORMULA_LIMITS: dict[str, str] = {
+    "sort": "Formulas in rows a sort moves are replaced by their results; rows that stay put keep "
+            "their formulas.",
+    "move": "Rows moved to another tab arrive as plain values, not formulas.",
+    "copy": "Rows copied to another tab arrive as plain values, not formulas.",
+}
+
+
+def formula_limits(config: ConfigSpec) -> list[str]:
+    used = {r.action for r in config.rules}
+    return [text for action, text in FORMULA_LIMITS.items() if action in used]
+
+
 def _issue(pointer: str, code: str, message: str) -> ValidationIssue:
     return ValidationIssue(pointer=pointer, code=code, message=message)
 

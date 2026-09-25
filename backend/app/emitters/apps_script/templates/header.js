@@ -9,7 +9,7 @@
  * What this script does:
 ${rule_summaries}
  *
- * What it does NOT do (the managed service does these; a pasted script cannot):
+ * What it does NOT do, and limits to know about:
 ${absent}
  *
  * This script is self-contained and offline. It never calls out, sends telemetry,

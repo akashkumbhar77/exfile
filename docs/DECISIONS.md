@@ -1015,3 +1015,26 @@ rules with the backup tab off.
     cannot, since moving a formula row by value is inherently lossy
   Recommendation: (c) for clear plus (a) for sort, and the P1.5 xlsx reader flags formula columns
   so the readback can warn.
+
+### Owner rulings on the templates (2026-09-25)
+- **`KEEP_RUNS = 10` for the backup tab: accepted.**
+- **Formulas: the recommendation is accepted**, and done:
+  - **Clear empties only the cells it blanks**, with one `RangeList.clearContent()` call, so
+    formulas anywhere else in the row survive.
+  - **Sort writes only the rows that change place.** A row that stays put keeps its formulas;
+    a formula in a row that moves is replaced by its result. That is inherent in moving rows by
+    value, and it is stated.
+  - **The stated limits are in the script's header**, for the actions the config uses: sort,
+    and move/copy (rows arrive in another tab as values). The header's "does not do" list is
+    retitled "What it does NOT do, and limits to know about", since the managed-service framing
+    was stale after the pivot. The same text goes into the P3 page's honest limits.
+  - **The P1.5 xlsx reader flags formula columns**, so the readback can warn before download.
+  - **The mock now models formulas.** A cell can hold one; writing a value or clearing the
+    content replaces it, which is Sheets' documented behaviour. It also supports
+    `getRangeList(...).clearContent()`. The golden-file suite still passes (27/27).
+  - Three tests prove which formulas survive, and each was killed by the mutation it guards.
+- **Found while doing it:** the script's planned writes shared arrays with the run's live
+  picture. So a sort's write could change if a later rule in the same run removed rows from that
+  tab. Each write now takes its own copy, and `test_a_sort_then_a_move_in_the_same_run` holds it.
+- **P1 is closed:** every action and trigger emits, offline parity is green on the unmodified
+  reference config, and the owner's decisions are in. Merged to main.

@@ -5,5 +5,5 @@
                  MAX_ROWS_PER_RUN + ' rows in one run');
       } else if (${var_name}.rowsAffected) {
         view.values = ${var_name}.values;
-        run.writes.push(writeValues_(view, ${var_name}.values));
+        run.writes.push(writeRows_(view, ${var_name}.rows));
       }

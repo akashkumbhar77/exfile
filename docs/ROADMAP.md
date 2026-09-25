@@ -20,7 +20,7 @@ is the working breakdown and is kept current as items close.
 2. **The paste-header-rows path (PATCH-005 D.1) is deferred until after P5.** With no data rows
    there is no meaningful preview, and the preview is the product.
 
-## P1 — the generator is complete (in progress)
+## P1 — the generator is complete (closed 2026-09-25)
 
 Exit: every supported action has a template, and offline parity is green on the **unmodified**
 reference config.
@@ -39,9 +39,9 @@ reference config.
       the backup tab on (PATCH-005 I.7). Each with parity tests.
 - [ ] `docs/MOCK-DIVERGENCES.md` kept current (started 2026-09-25). Anything P4 exposes is back-ported into the mock
       as a test case.
-- [ ] Owner decisions from the templates: `KEEP_RUNS = 10` for the backup tab, and formulas in
-      rewritten rows (DECISIONS "P1: the remaining templates").
-- [ ] Close: merge `s7-numeric-conditions` to main.
+- [x] Owner decisions from the templates: `KEEP_RUNS = 10`; formulas - clear touches only its
+      cells, sort only the rows that move, the rest is a stated limit (DECISIONS, 2026-09-25).
+- [x] Close: merge `s7-numeric-conditions` to main.
 
 ## P1.5 — read the uploaded sheet
 
@@ -79,7 +79,8 @@ Exit: one page does P2's flow, and revising the instruction is fast and obvious.
 - [ ] Sessions in memory only, hard TTL, upload size cap (I.6).
 - [ ] Timezone selector defaulting to the browser's zone.
 - [ ] Install card (Extensions → Apps Script → paste → run `installTrigger`) and the honest
-      limits (G, plus I.4 preview fidelity), never softened.
+      limits (G, plus I.4 preview fidelity), never softened - including the formula limits the
+      script's header states (`capabilities.FORMULA_LIMITS`).
 
 ## P4 — live proof (release gate)
 

@@ -361,3 +361,77 @@ def test_a_row_emptied_by_clear_is_not_sorted_but_is_still_formatted() -> None:
     assert machines is not None
     assert all(v in (None, "") for v in machines.values[-1]), "the emptied row stays at the bottom"
     assert machines.formats[-1][0].background == "#FAFAFA", "and is painted"
+
+
+# ---------------------------------------------------------------- formulas (owner ruling 2026-09-25)
+
+def run_with_formulas(script: str, workbook: Workbook, formulas: list[tuple[str, int, int]]) -> dict[str, Any]:
+    """Like run_generated, with formula cells (tab, row, col); their values are the workbook's."""
+    import json
+    import subprocess
+
+    from tests.test_engine_python_parity import HARNESS, _encode_workbook
+    request = {"script": "generated", "scriptSource": script, "now": "2026-09-16T10:00:00",
+               "workbook": _encode_workbook(workbook), "steps": [{"call": ENTRY_POINT}],
+               "dump_min_rows": 40, "dump_min_cols": 12}
+    for tab in request["workbook"]["tabs"]:
+        tab["formulas"] = [{"row": r, "col": c, "formula": f"=R{r}C{c}"} for t, r, c in formulas if t == tab["name"]]
+    proc = subprocess.run([str(NODE), str(HARNESS)], input=json.dumps(request), capture_output=True,
+                          text=True, encoding="utf-8", timeout=120)
+    assert proc.returncode == 0, proc.stderr
+    return dict(json.loads(proc.stdout))
+
+
+def formula_rows(response: dict[str, Any], tab: str, col: int) -> set[int]:
+    cells = next(t for t in response["tabs"] if t["name"] == tab)["cells"]
+    return {r + 1 for r, row in enumerate(cells) if col <= len(row) and row[col - 1].get("f")}
+
+
+QTY = 4
+DATA_ROWS = range(HEADER_ROW + 1, HEADER_ROW + 11)
+
+
+def test_clear_empties_only_its_own_cells_and_keeps_formulas() -> None:
+    """Row 7's FREEZE? is cleared; its QTY formula, and every other row's, stays a formula."""
+    workbook = reference_workbook.build()
+    rule = {"id": "unfreeze_dispatched", "action": "clear", "tabs": ["MACHINES"], "trigger": {"on_edit": {}},
+            "when": DISPATCHED, "columns": ["FREEZE?"]}
+    raw = only(workbook, rule)
+    config = ConfigSpec.model_validate(raw)
+    script = emit(config, workbook=workbook).script
+    assert script is not None
+    response = run_with_formulas(script, workbook, [("MACHINES", r, QTY) for r in DATA_ROWS])
+    py = execute_run(config, workbook, RunEvent.manual(), EvalContext(run_id="f", today=TODAY, now=STARTED))
+    compare_grids(py.workbook, response, config.header_row, "clear with formulas")
+    assert formula_rows(response, "MACHINES", QTY) == set(DATA_ROWS)
+
+
+def test_sort_keeps_the_formulas_of_rows_that_stay_put() -> None:
+    """A row the sort leaves in place keeps its formula; a row that moves arrives as its value.
+    That second half is the stated limit (DECISIONS, formulas)."""
+    workbook = reference_workbook.build()
+    raw = load_reference_raw()
+    raw["rules"] = [raw["rules"][0]]           # just the stage sort
+    config = ConfigSpec.model_validate(raw)
+    script = emit(config, workbook=workbook).script
+    assert script is not None
+    response = run_with_formulas(script, workbook, [("MACHINES", r, QTY) for r in DATA_ROWS])
+    py = execute_run(config, workbook, RunEvent.manual(), EvalContext(run_id="f", today=TODAY))
+    compare_grids(py.workbook, response, config.header_row, "sort with formulas")
+    before, after = workbook.tab("MACHINES"), py.workbook.tab("MACHINES")
+    assert before is not None and after is not None
+    stayed = {r for r in DATA_ROWS if before.values[r - 1][0] == after.values[r - 1][0]}
+    assert stayed and stayed != set(DATA_ROWS), "the fixture must have both kinds of row"
+    assert formula_rows(response, "MACHINES", QTY) == stayed
+
+
+def test_a_sort_then_a_move_in_the_same_run() -> None:
+    """The sort's planned write must not change when the move later removes rows from the same
+    tab in the run's picture: each write is taken as it was planned."""
+    workbook = with_archive()
+    raw = load_reference_raw()
+    move = {"id": "archive_done", "action": "move", "tabs": ["MACHINES"], "trigger": {"after": "sort_by_stage"},
+            "when": {"enum": "STATUS", "is": "COMPLETED"}, "to_tab": "ARCHIVE"}
+    raw = config_for(workbook, move)
+    raw["guards"]["backup_tab"] = True
+    both(raw, workbook, "sort then move")
