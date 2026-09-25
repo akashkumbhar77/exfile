@@ -961,11 +961,11 @@ Implements the owner's ruling of 2026-09-20: the evaluator learns banding, width
   - widths are set only when the target tab is created, from `column_widths` (keys compared
     trimmed and case-insensitively; a key already in canonical form wins a collision) or
     `default_column_width`; after that the owner's own widths are kept.
-- **Open for the owner:** "a header containing DATE" is a name-based rule inherited from legacy,
+- **Ruled (owner, 2026-09-25): keep the DATE rule for now.** "A header containing DATE" is a name-based rule inherited from legacy,
   not a declared column type. It matches the reference workbook exactly (DISPATCH DATE, INVOICE
   DATE), but a column called "UPDATED" would also get a date format, since it contains "DATE".
   A typed alternative would be a `date_columns` list in `Presentation`: additive, not breaking.
-  Kept as is until ruled.
+  Revisit if the gauntlet (P5) shows a false match.
 - **Script.** The date format is planned with the rows (read from the source's first data cell);
   the write phase removes old bandings before rebuilding, bands the data rows, formats the date
   columns, and sets widths only on a newly created target.
@@ -976,3 +976,42 @@ Implements the owner's ruling of 2026-09-20: the evaluator learns banding, width
   (27/27).
 - The fenced live adapter refuses the new ops by name instead of skipping them. The one offline
   test that drove it filters them out explicitly, since it only needs SUMMARY's values.
+
+### P1: the remaining templates - validate, copy, move, dedupe, clear (2026-09-25)
+Every action and trigger in the apps_script matrix is now emitted; `check_config` refuses only
+what the target never does (finer-than-hourly schedules, unreadable schedules) and destructive
+rules with the backup tab off.
+- **The backup tab is modelled in the evaluator** (`app/services/backup.py`), for the same reason
+  as presentation: what the script writes there must be parity-checked, not invented.
+  - Destructive rules record the rows they remove or overwrite (`RulePlan.backup`).
+  - When `guards.backup_tab` is on and the run succeeds, those rows go to a hidden `_backup` tab,
+    one per row: run start (to the second), rule, tab, row number, then the row's cells.
+  - **Proposed for the owner: `KEEP_RUNS = 10`.** PATCH-004 D.5 says "the last N runs" without
+    an N. It is one constant, emitted into the script's settings, and shown in the "no undo" line.
+  - `EvalContext.now` carries the run's start time; `Tab.hidden` joined the grid model.
+  - The script writes the backup before any other write.
+- **The script's in-memory tabs now follow the evaluator's grid through structural changes.**
+  Each tab records where every row stood at the start of the run, so colours read from the sheet
+  follow their rows. Inserted rows start with no formatting and no dropdowns (cleared
+  explicitly), removed rows take their formatting with them, and formatting covers rows an
+  earlier rule emptied but never rows that were removed. Sort stops at the last row with
+  content, as the evaluator does.
+- **Bugs found along the way (the evaluator was right each time):**
+  - Copy did not count toward `max_rows_per_run`. Copy is a guarded action; a move counts twice
+    (rows out plus rows in).
+  - `match_source` read the stale first row after a move had taken it out.
+  - The parity comparator never looked below the evaluator's grid, so a script painting one row
+    too many passed. It now requires those rows to be untouched.
+- **Tests:** 24 action-parity tests (`tests/test_apps_script_actions.py`), each killed by a
+  targeted mutation of the template it guards. The comparator now also checks dropdowns and the
+  hidden flag. 592 tests in total. The golden-file suite still passes (27/27).
+- **Open finding for the owner: formulas.** The mock has no formulas. The script reads values and
+  writes values back, so any rule that rewrites rows turns the formulas in those rows into plain
+  values: sort rewrites the whole data block, and clear rewrites whole cleared rows. The managed
+  tier avoided this by writing only changed rows. Options:
+  - (a) state it as a limit (G / I.4)
+  - (b) refuse sheets whose governed data rows contain formulas
+  - (c) write only the cells a rule changes: clear can do this through a range list, but sort
+    cannot, since moving a formula row by value is inherently lossy
+  Recommendation: (c) for clear plus (a) for sort, and the P1.5 xlsx reader flags formula columns
+  so the readback can warn.

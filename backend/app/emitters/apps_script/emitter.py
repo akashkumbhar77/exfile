@@ -30,11 +30,15 @@ from app.schemas.config import (
     Condition,
     ConfigSpec,
     ConsolidateRule,
+    ClearRule,
+    CopyRule,
     DateCondition,
+    DedupeRule,
     DebouncedTrigger,
     EnumCondition,
     EnumSpec,
     FormatRule,
+    MoveRule,
     NotCondition,
     NumericAbs,
     NumericAdd,
@@ -55,6 +59,7 @@ from app.schemas.config import (
     SortRule,
     Style,
     TabSelector,
+    ValidateRule,
 )
 from app.services.describe import (
     Scope,
@@ -64,9 +69,10 @@ from app.services.describe import (
     plain,
     style_segments,
 )
+from app.services.backup import KEEP_RUNS
 from app.services.grid import Workbook
 from app.services.headers import canon_key
-from app.services.rules.consolidate import FALLBACK_DATE_FORMAT, column_width_map
+from app.services.rules.consolidate import DEFAULT_NUMBER_FORMAT, FALLBACK_DATE_FORMAT, column_width_map
 from app.services.validator import ValidationIssue
 
 PRODUCT = "Sheets Automation"
@@ -485,7 +491,9 @@ def consolidate_date_format(rule: ConsolidateRule, config: ConfigSpec) -> str:
         "    if (!views[f].rowCount) continue;",
         find,
         "    if (dateAt === undefined) continue;",
-        "    dateFormat = views[f].sheet.getRange(DATA_START_ROW, dateAt + 1).getNumberFormat();",
+        "    var firstRow = views[f].origin[0];   // where the first row now stood at the start",
+        f"    dateFormat = firstRow < 0 ? {js_string(DEFAULT_NUMBER_FORMAT)}   // a row this run inserted",
+        "        : views[f].sheet.getRange(DATA_START_ROW + firstRow, dateAt + 1).getNumberFormat();",
         "    break;",
         "  }",
     ])
@@ -536,12 +544,9 @@ def _consolidate_formatting(rule: ConsolidateRule, config: ConfigSpec) -> str:
         return "  // no format_like rule: the rows keep the plain style"
     return "\n".join([
         f"  // coloured like rule {format_rule.id!r}",
-        f"  var painted = {rule_fn(format_rule.id)}(buildView_(sheet, true), today);",
-        "  if (painted && painted.rowsAffected) {",
-        "    painted.range.setFontColors(painted.fonts);",
-        "    painted.range.setBackgrounds(painted.fills);",
-        "    painted.range.setFontLines(painted.lines);",
-        "  }",
+        "  var built = buildView_(sheet, true);",
+        f"  var painted = {rule_fn(format_rule.id)}(built, today);",
+        "  if (painted && painted.rowsAffected) writeFormats_(built, painted)();",
     ])
 
 
@@ -650,7 +655,7 @@ def _constants(config: ConfigSpec) -> str:
                 config_version=config.config_version, header_row=config.header_row,
                 data_start_row=config.data_start_row,
                 hold_column=canon_key(config.guards.hold_column),
-                max_rows=config.guards.max_rows_per_run, governed=governed)
+                max_rows=config.guards.max_rows_per_run, backup_runs=KEEP_RUNS, governed=governed)
 
 
 def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
@@ -668,8 +673,6 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
     enums_used: set[str] = set()
 
     for rule in config.rules:
-        # capabilities.check_config already refused everything else, so this holds
-        assert isinstance(rule, (SortRule, FormatRule, ConsolidateRule)), rule.action
         text = described[rule.id]
         cols = Columns()
         selector, tab_note = _selector_js(rule.sources if isinstance(rule, ConsolidateRule) else rule.tabs)
@@ -690,7 +693,49 @@ def emit(config: ConfigSpec, *, workbook: Workbook | None = None,
             functions.append(consolidate_function(rule, config, common))
             functions.append(fill("consolidate_call.js", var_name=var_name, fn=rule_fn(rule.id),
                                   target_note=rule.target_tab, **step))
+        elif isinstance(rule, ValidateRule):
+            functions.append(fill("validate.js", column=js_string(canon_key(rule.column)),
+                                  column_name=canon_key(rule.column), **common))
+            call = fill("validate_call.js", var_name=var_name, fn=rule_fn(rule.id),
+                        values="[" + ", ".join(js_string(v) for v in validate_values(rule, config)) + "]",
+                        allow_invalid="true" if rule.allow_invalid else "false")
+            functions.append(fill("step.js", selector=selector, call=call.rstrip("\n"), **step))
+        elif isinstance(rule, DedupeRule):
+            keys = [canon_key(k) for k in rule.key_columns]
+            functions.append(fill(
+                "dedupe.js", keys="[" + ", ".join(js_string(k) for k in keys) + "]",
+                keep=("  candidates.reverse();                    // keep the last of each, not the first"
+                      if rule.keep == "last" else "  // the first of each is kept"), **common))
+            call = fill("dedupe_call.js", var_name=var_name, fn=rule_fn(rule.id), rule_id=rule.id)
+            functions.append(fill("step.js", selector=selector, call=call.rstrip("\n"), **step))
+        elif isinstance(rule, ClearRule):
+            condition = condition_js(rule.when, cols)
+            enums_used |= _enums_in(rule.when)
+            targets = ", ".join(cols.var(c) for c in rule.columns)
+            functions.append(fill("clear.js", columns=cols.declarations(), targets=targets,
+                                  condition=condition, **common))
+            call = fill("clear_call.js", var_name=var_name, fn=rule_fn(rule.id), rule_id=rule.id)
+            functions.append(fill("step.js", selector=selector, call=call.rstrip("\n"), **step))
+        elif isinstance(rule, MoveRule):
+            condition = condition_js(rule.when, cols)
+            enums_used |= _enums_in(rule.when)
+            functions.append(fill(
+                "move.js", step=step_fn(rule.id), to_tab=js_string(rule.to_tab), to_tab_name=rule.to_tab,
+                selector=selector, columns=cols.declarations("      "), condition=condition,
+                at="0" if rule.position == "top" else "lastContentIndex_(target) + 1",
+                **{k: v for k, v in common.items() if k != "fn"}))
+        elif isinstance(rule, CopyRule):
+            condition = condition_js(rule.when, cols)
+            enums_used |= _enums_in(rule.when)
+            keys = [canon_key(k) for k in rule.key_columns]
+            functions.append(fill(
+                "copy.js", step=step_fn(rule.id), to_tab=js_string(rule.to_tab), to_tab_name=rule.to_tab,
+                keys="[" + ", ".join(js_string(k) for k in keys) + "]",
+                key_note=" + ".join(keys), selector=selector, columns=cols.declarations("      "),
+                condition=condition, at="0" if rule.position == "top" else "lastContentIndex_(target) + 1",
+                **{k: v for k, v in common.items() if k != "fn"}))
         else:
+            assert isinstance(rule, FormatRule), rule.action
             body = format_body(rule, cols)
             enums_used |= _enums_in_format(rule)
             functions.append(fill("format.js", columns=cols.declarations(), body=body, **common))
@@ -727,29 +772,35 @@ def _enums_in_consolidate(rule: ConsolidateRule, config: ConfigSpec) -> set[str]
     return found
 
 
+def _enums_in(cond: Condition) -> set[str]:
+    """The enums a condition classifies against, so their stage functions are emitted."""
+    match cond:
+        case AllCondition():
+            return set().union(*(_enums_in(c) for c in cond.all))
+        case AnyCondition():
+            return set().union(*(_enums_in(c) for c in cond.any))
+        case NotCondition():
+            return _enums_in(cond.not_)
+        case EnumCondition():
+            return {cond.enum}
+        case _:
+            return set()
+
+
 def _enums_in_format(rule: FormatRule) -> set[str]:
     found: set[str] = set()
-
-    def walk(cond: Condition) -> None:
-        match cond:
-            case AllCondition():
-                for c in cond.all:
-                    walk(c)
-            case AnyCondition():
-                for c in cond.any:
-                    walk(c)
-            case NotCondition():
-                walk(cond.not_)
-            case EnumCondition():
-                found.add(cond.enum)
-            case _:
-                pass
-
     for rr in rule.row_rules:
-        walk(rr.when)
+        found |= _enums_in(rr.when)
     for cr in rule.cell_rules:
-        walk(cr.when)
+        found |= _enums_in(cr.when)
     return found
+
+
+def validate_values(rule: ValidateRule, config: ConfigSpec) -> list[str]:
+    """The dropdown's list: the rule's own values, or the enum's stages in the order listed."""
+    if rule.from_enum is not None:
+        return [s.value for s in config.enums[rule.from_enum].stages]
+    return list(rule.values or [])
 
 
 def _config_comment(config: ConfigSpec, scope: Scope) -> str:

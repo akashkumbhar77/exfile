@@ -534,8 +534,9 @@ class Guards(_Strict):
     hold_column: Annotated[str, Field(min_length=1)] = "!hold"
     backup_tab: bool = Field(
         default=False,
-        description="Generated scripts only: copy affected rows to a hidden _backup tab before a "
-                    "destructive rule. Forced on there (PATCH-005 I.7); it is not a snapshot.",
+        description="Copy rows that move, dedupe or clear rules remove or overwrite to a hidden "
+                    "_backup tab, keeping the last 10 runs (services/backup.py). Forced on for "
+                    "generated scripts (PATCH-005 I.7); it is not a snapshot.",
     )
 
 

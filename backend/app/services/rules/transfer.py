@@ -13,7 +13,7 @@ from app.schemas.config import ConfigSpec, CopyRule, MoveRule
 from app.services.conditions import EvalContext, evaluate
 from app.services.grid import Row, Workbook, is_empty, norm_text, row_is_empty
 from app.services.headers import TabView, build_view
-from app.services.rules.base import RuleAbort, RulePlan, TabChange, TabStats
+from app.services.rules.base import BackupRow, RuleAbort, RulePlan, TabChange, TabStats
 from app.services.rules.tabs import resolve_tabs
 
 
@@ -86,12 +86,15 @@ def evaluate_transfer(
                     existing.add(k)
                 incoming.append(_to_target(row, src, dst))
                 taken.add(src.data_start_row + offset)
+                if not is_copy:
+                    plan.backup.append(BackupRow(name, src.data_start_row + offset, list(row)))
             if taken and not is_copy:
                 after = before.clone()
                 after.delete_rows(taken)
                 plan.changes.append(TabChange(name, before, after, TabStats(rows_removed=len(taken))))
     except RuleAbort as exc:
         plan.changes.clear()
+        plan.backup.clear()
         plan.error = str(exc)
         return plan
 

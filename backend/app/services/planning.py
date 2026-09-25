@@ -61,8 +61,8 @@ def plan_grid(
     run_id = run_id or new_run_id()
     event = event or RunEvent.manual()
     ref = source_ref if source_ref is not None else config.sheet_id
-    today = (now or datetime.now(UTC)).astimezone(ZoneInfo(grid.timezone)).date()
-    ctx = EvalContext(run_id=run_id, today=today)
+    local = (now or datetime.now(UTC)).astimezone(ZoneInfo(grid.timezone))
+    ctx = EvalContext(run_id=run_id, today=local.date(), now=local.replace(tzinfo=None))
 
     result = execute_run(config, grid.workbook, event, ctx)
     report = summarize_plan(result.plan)

@@ -278,6 +278,15 @@
     return this._fill(rule, function (c, x) { c.dv = x ? { values: x.values.slice(), allowInvalid: x.allowInvalid } : null; },
       'Range.setDataValidation');
   };
+  Range.prototype.clearFormat = function () {
+    return this._fill(null, function (c) {
+      var fresh = newCell();
+      FORMAT_KEYS.forEach(function (k) { c[k] = fresh[k]; });
+    }, 'Range.clearFormat');
+  };
+  Range.prototype.clearDataValidations = function () {
+    return this._fill(null, function (c) { c.dv = null; }, 'Range.clearDataValidations');
+  };
   Range.prototype.getDataValidations = function () {
     return this._read(function (c) { return c ? c.dv : null; }, 'Range.getDataValidations');
   };
@@ -534,6 +543,7 @@
         });
         Object.keys(t.column_widths || {}).forEach(function (c) { sh._colWidths[c] = t.column_widths[c]; });
         (t.bandings || []).forEach(function (b) { sh._bandings.push(b); });
+        if (t.hidden) sh._hidden = true;
       });
     },
     edit: function (tab, row, col, value) {

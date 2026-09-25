@@ -6,7 +6,7 @@ from app.schemas.config import ClearRule, ConfigSpec, DedupeRule, ValidateRule
 from app.services.conditions import EvalContext, evaluate
 from app.services.grid import DataValidation, Workbook, is_empty, norm_text, row_is_empty
 from app.services.headers import build_view
-from app.services.rules.base import RulePlan, TabChange, TabStats
+from app.services.rules.base import BackupRow, RulePlan, TabChange, TabStats
 from app.services.rules.tabs import resolve_tabs
 
 
@@ -42,6 +42,7 @@ def evaluate_dedupe(
                 drop.add(row_no)
             seen.add(key)
         if drop:
+            plan.backup += [BackupRow(name, r, list(before.row(r))) for r in sorted(drop)]
             after = before.clone()
             after.delete_rows(drop)
             plan.changes.append(TabChange(name, before, after, TabStats(rows_removed=len(drop))))
@@ -75,6 +76,7 @@ def evaluate_clear(
                 continue
             target = after.values[view.data_start_row - 1 + offset]
             if any(not is_empty(target[i]) for i in idxs):
+                plan.backup.append(BackupRow(name, view.data_start_row + offset, list(row)))
                 for i in idxs:
                     target[i] = None
                 cleared += 1

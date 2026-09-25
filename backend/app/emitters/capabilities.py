@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from app.schemas.config import ConfigSpec, Rule, ScheduleTrigger
 from app.services import cron
+from app.services.backup import KEEP_RUNS
 from app.services.validator import ValidationIssue
 
 TARGET = "apps_script"
@@ -45,19 +46,19 @@ def _later(note: str) -> Support:
     return Support(True, False, note)
 
 
-# PATCH-004 B. "Supported" is the patch's list; move/copy are in neither of the patch's lists, so
-# they are refused rather than guessed at (see docs/BLOCKERS.md).
+# PATCH-004 B, as amended by PATCH-005 I.7 (in-file move/copy supported). Every action is emitted
+# as of P1; `_later` stays for capabilities that enter the matrix before their template does.
 ACTIONS: dict[str, Support] = {
     "sort": _YES,
     "format": _YES,
     "consolidate": _YES,   # single file, cross-tab; a target is never a source
-    "validate": _later("S7b"),
-    "dedupe": _later("S7b"),
-    "clear": _later("S7b"),
+    "validate": _YES,
+    "dedupe": _YES,
+    "clear": _YES,
     # PATCH-005 I.7: in-file move/copy are supported ("move completed rows to Archive"); only
     # rules crossing spreadsheet files are refused, and the schema cannot express those yet.
-    "move": _later("S7b; in-file only, and it forces the backup tab on"),
-    "copy": _later("S7b; in-file only"),
+    "move": _YES,         # in-file only; forces the backup tab on (below)
+    "copy": _YES,         # in-file only: to_tab is a governed tab of this spreadsheet
 }
 
 # Rules that rewrite or remove rows. This tier has no snapshots, so PATCH-005 I.7 forces the
@@ -77,8 +78,9 @@ TRIGGERS: dict[str, Support] = {
 # download UI (E.2) and the refusals read from one table.
 ABSENT_BY_DESIGN: dict[str, str] = {
     # D.5: the optional backup tab is the script tier's only undo and is not a snapshot.
-    "snapshots_and_undo": "No undo. The managed service snapshots every run and can put a sheet back; "
-                          "this script cannot.",
+    "snapshots_and_undo": "No undo. Rows a rule removes or overwrites are copied to a hidden _backup "
+                          f"tab (the last {KEEP_RUNS} runs), which you can copy back by hand; nothing "
+                          "puts a sheet back automatically.",
     "drift_repair": "No repair. If your headers change, this script stops and tells you, but it "
                     "cannot propose a fix.",
     "central_audit": "No weekly audit of whether the rules still match how you work.",

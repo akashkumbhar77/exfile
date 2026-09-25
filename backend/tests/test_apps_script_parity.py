@@ -34,6 +34,7 @@ from tests.test_engine_python_parity import (
     HARNESS,
     NODE,
     _compare_formats,
+    _compare_validations,
     _encode_workbook,
     _engine_values,
     _py_values,
@@ -65,7 +66,13 @@ def compare_grids(py_workbook: Workbook, response: dict[str, Any], header_row: i
         got = tabs[tab.name]
         assert _engine_values(got) == _py_values(tab), f"{label}: {tab.name} values"
         _compare_formats(tab, got, header_row, f"{label}: {tab.name}")
+        _compare_validations(tab, got, f"{label}: {tab.name}")
         compare_presentation(tab, got, f"{label}: {tab.name}")
+        for r, row in enumerate(got["cells"][tab.height:], start=tab.height + 1):
+            # below the evaluator's grid the sheet must be untouched: nothing written, nothing painted
+            for c, cell in enumerate(row, start=1):
+                assert (cell["v"], cell["fc"], cell["bg"], cell["fl"]) == ("", "#000000", None, "none"), \
+                    f"{label}: {tab.name} R{r}C{c} is below the data but was written"
 
 
 def compare_presentation(tab: Tab, got: dict[str, Any], label: str) -> None:
@@ -73,6 +80,7 @@ def compare_presentation(tab: Tab, got: dict[str, Any], label: str) -> None:
     formats = {(r + 1, c + 1): cell["nf"] for r, row in enumerate(got["cells"])
                for c, cell in enumerate(row) if cell.get("nf")}
     assert formats == tab.number_formats, f"{label}: number formats"
+    assert got["hidden"] == tab.hidden, f"{label}: hidden"
     assert {int(c): w for c, w in got["colWidths"].items()} == tab.column_widths, f"{label}: column widths"
     bands = [(b["theme"], b["row"], b["col"], b["nr"], b["nc"], b["header"], b["footer"])
              for b in got["bandings"]]
@@ -183,6 +191,7 @@ def _decode_workbook(response: dict[str, Any]) -> Workbook:
                     tab.number_formats[(r + 1, c + 1)] = cell["nf"]
         tab.column_widths = {int(c): w for c, w in dumped["colWidths"].items()}
         tab.protected = dumped["protected"]
+        tab.hidden = dumped["hidden"]
         for b in dumped["bandings"]:
             tab.banding = Banding(b["theme"], b["row"], b["nr"], b["nc"])
         tabs.append(tab)

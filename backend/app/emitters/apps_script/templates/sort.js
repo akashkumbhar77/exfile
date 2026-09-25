@@ -6,7 +6,8 @@ function ${fn}(view) {
 ${columns}
   var rows = view.values;
   var slots = [], movable = [];
-  for (var i = 0; i < rows.length; i++) {
+  // Down to the last row with anything in it: rows an earlier rule emptied stay where they are.
+  for (var i = 0; i <= lastContentIndex_(view); i++) {
     if (isHeld_(view, rows[i])) continue;      // held rows keep their exact position
     slots.push(i);
     movable.push({ row: rows[i], at: i });

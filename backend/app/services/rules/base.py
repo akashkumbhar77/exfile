@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.schemas.config import ConfigSpec
-from app.services.grid import Tab, Workbook
+from app.services.grid import Row, Tab, Workbook
 
 
 class RuleAbort(Exception):
@@ -65,7 +65,20 @@ class TabChange:
             or b.number_formats != self.after.number_formats
             or b.column_widths != self.after.column_widths
             or b.banding != self.after.banding
+            or b.hidden != self.after.hidden
         )
+
+
+@dataclass(frozen=True, repr=False)
+class BackupRow:
+    """A row as it was before a destructive rule removed or overwrote it (services/backup.py)."""
+
+    tab: str
+    row: int  # 1-based, in the tab as the rule found it
+    values: Row
+
+    def __repr__(self) -> str:  # B.6: cell values never reach logs or tracebacks
+        return f"BackupRow(tab={self.tab!r}, row={self.row}, values=<redacted>)"
 
 
 @dataclass
@@ -76,6 +89,7 @@ class RulePlan:
     warnings: list[str] = field(default_factory=list)
     error: str | None = None  # set when the rule aborted; `changes` is then empty
     blocked: str | None = None  # set when a guard refuses the plan
+    backup: list[BackupRow] = field(default_factory=list)  # rows this rule removes or overwrites
 
     @property
     def destructive(self) -> bool:

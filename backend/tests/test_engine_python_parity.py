@@ -330,6 +330,8 @@ def _encode_workbook(wb: Workbook) -> dict[str, Any]:
                                      for (r, c), f in sorted(t.number_formats.items())]
         if t.column_widths:
             tab["column_widths"] = {str(c): w for c, w in t.column_widths.items()}
+        if t.hidden:
+            tab["hidden"] = True
         if t.banding is not None:
             b = t.banding
             tab["bandings"] = [{"row": b.row, "col": 1, "nr": b.rows, "nc": b.cols, "theme": b.theme,

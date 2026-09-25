@@ -110,22 +110,46 @@ function buildView_(sheet, raw) {
   }
   var lastRow = sheet.getLastRow();
   var count = Math.max(0, lastRow - DATA_START_ROW + 1);
+  var origin = [];
+  for (var r = 0; r < count; r++) origin.push(r);
   return {
     sheet: sheet, name: sheet.getName(), cols: cols, order: order, holdIdx: holdIdx, lastCol: lastCol,
     headers: headers, rowCount: count,
-    values: count ? sheet.getRange(DATA_START_ROW, 1, count, lastCol).getValues() : []
+    values: count ? sheet.getRange(DATA_START_ROW, 1, count, lastCol).getValues() : [],
+    // Where each data row stood when the run started (-1: a row this run inserted), so the
+    // cell formatting read from the sheet follows its row, as it will once the run is written.
+    origin: origin, baseCount: count,
+    // How far down the data went when the run started: formatting still covers rows that
+    // earlier rules in this run emptied (but not rows they removed).
+    extent: count
   };
 }
 
-/** The data rows' colours and strike-through, read once per run and then kept in step. */
+/**
+ * The data rows' colours and strike-through as earlier rules in this run left them: read from
+ * the sheet once, then moved with their rows. Rows this run inserted have none.
+ */
 function viewFormats_(view) {
   if (!view.formats) {
-    var range = view.sheet.getRange(DATA_START_ROW, 1, view.rowCount, view.lastCol);
-    view.formats = { range: range, fonts: range.getFontColors(), fills: range.getBackgrounds(),
-                     lines: range.getFontLines() };
+    var read = { fonts: [], fills: [], lines: [] };
+    if (view.baseCount) {
+      var range = view.sheet.getRange(DATA_START_ROW, 1, view.baseCount, view.lastCol);
+      read = { fonts: range.getFontColors(), fills: range.getBackgrounds(), lines: range.getFontLines() };
+    }
+    var fonts = [], fills = [], lines = [];
+    for (var i = 0; i < view.origin.length; i++) {
+      var o = view.origin[i];
+      fonts.push(o >= 0 ? read.fonts[o] : fillArray_(view.lastCol, DEFAULT_FONT));
+      fills.push(o >= 0 ? read.fills[o] : fillArray_(view.lastCol, DEFAULT_FILL));
+      lines.push(o >= 0 ? read.lines[o] : fillArray_(view.lastCol, 'none'));
+    }
+    view.formats = { fonts: fonts, fills: fills, lines: lines };
   }
   return view.formats;
 }
+
+var DEFAULT_FONT = '#000000';   // what Sheets reports for a cell nobody coloured
+var DEFAULT_FILL = '#ffffff';
 
 function writeValues_(view, values) {
   return function () {
@@ -133,12 +157,184 @@ function writeValues_(view, values) {
   };
 }
 
-function writeFormats_(plan) {
+function writeFormats_(view, plan) {
   return function () {
-    plan.range.setFontColors(plan.fonts);
-    plan.range.setBackgrounds(plan.fills);
-    plan.range.setFontLines(plan.lines);
+    var range = view.sheet.getRange(DATA_START_ROW, 1, plan.fonts.length, view.lastCol);
+    range.setFontColors(plan.fonts);
+    range.setBackgrounds(plan.fills);
+    range.setFontLines(plan.lines);
   };
+}
+
+/** Dropdowns on the given data rows of one column, one range per run of consecutive rows. */
+function writeDropdowns_(view, col, rows, values, allowInvalid) {
+  return function () {
+    var rule = SpreadsheetApp.newDataValidation().requireValueInList(values, true)
+        .setAllowInvalid(allowInvalid).build();
+    for (var s = 0; s < rows.length;) {
+      var e = s;
+      while (e + 1 < rows.length && rows[e + 1] === rows[e] + 1) e++;
+      view.sheet.getRange(DATA_START_ROW + rows[s], col + 1, e - s + 1, 1).setDataValidation(rule);
+      s = e + 1;
+    }
+  };
+}
+
+/** The last data row (0-based) holding anything, or -1: where "the bottom" of the data is. */
+function lastContentIndex_(view) {
+  for (var i = view.values.length - 1; i >= 0; i--) if (!rowIsEmpty_(view.values[i])) return i;
+  return -1;
+}
+
+/**
+ * Inserts rows so the first lands at data index `at`; everything from there down moves down, and
+ * the new rows start with no formatting and no dropdowns. Planned now, written at the end.
+ */
+function insertDataRows_(run, view, at, rows) {
+  var blank = [];
+  for (var b = 0; b < rows.length; b++) blank.push(-1);
+  Array.prototype.splice.apply(view.values, [at, 0].concat(rows));
+  Array.prototype.splice.apply(view.origin, [at, 0].concat(blank));
+  if (view.formats) {
+    for (var i = 0; i < rows.length; i++) {
+      view.formats.fonts.splice(at + i, 0, fillArray_(view.lastCol, DEFAULT_FONT));
+      view.formats.fills.splice(at + i, 0, fillArray_(view.lastCol, DEFAULT_FILL));
+      view.formats.lines.splice(at + i, 0, fillArray_(view.lastCol, 'none'));
+    }
+  }
+  view.rowCount = view.values.length;
+  run.writes.push(function () {
+    var sheet = view.sheet, first = DATA_START_ROW + at;
+    if (first > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), rows.length);
+    else sheet.insertRowsBefore(first, rows.length);
+    var range = sheet.getRange(first, 1, rows.length, view.lastCol);
+    range.clearFormat();
+    range.clearDataValidations();
+    range.setValues(rows);
+  });
+}
+
+/** Removes data rows (0-based, ascending); everything below moves up. Planned now, written at the end. */
+function deleteDataRows_(run, view, rows) {
+  for (var d = rows.length - 1; d >= 0; d--) {
+    view.values.splice(rows[d], 1);
+    view.origin.splice(rows[d], 1);
+    if (view.formats) {
+      view.formats.fonts.splice(rows[d], 1);
+      view.formats.fills.splice(rows[d], 1);
+      view.formats.lines.splice(rows[d], 1);
+    }
+  }
+  view.rowCount = view.values.length;
+  var positions = rows.slice();
+  run.writes.push(function () {
+    for (var e = positions.length - 1; e >= 0;) {   // bottom up, one call per block of rows
+      var s = e;
+      while (s > 0 && positions[s - 1] === positions[s] - 1) s--;
+      view.sheet.deleteRows(DATA_START_ROW + positions[s], e - s + 1);
+      e = s - 1;
+    }
+  });
+}
+
+/** Writes only the given data rows (0-based, ascending), a block of consecutive rows at a time,
+ *  so the other rows - and any formulas in them - are not touched. */
+function writeRows_(view, rows) {
+  var values = view.values;
+  return function () {
+    for (var s = 0; s < rows.length;) {
+      var e = s;
+      while (e + 1 < rows.length && rows[e + 1] === rows[e] + 1) e++;
+      view.sheet.getRange(DATA_START_ROW + rows[s], 1, e - s + 1, view.lastCol)
+          .setValues(values.slice(rows[s], rows[e] + 1));
+      s = e + 1;
+    }
+  };
+}
+
+// ---------------------------------------------------------------- the backup tab
+
+/*
+ * Before a rule removes or overwrites rows, they are copied to a hidden tab, one row each:
+ * when the run started, the rule, the tab, the row number, then the row's cells as they were.
+ * Only the last BACKUP_RUNS runs are kept (see the settings at the top). It is not a snapshot: colours, dropdowns and formulas
+ * are not kept, and nothing puts rows back automatically - copy them back by hand if you need to.
+ */
+var BACKUP_TAB = '_backup';
+var BACKUP_HEADER = ['BACKED UP', 'RULE', 'TAB', 'ROW', 'ROW AS IT WAS'];
+
+function backUp_(run, rule, view, i) {
+  run.backup.push([rule, view.name, DATA_START_ROW + i].concat(view.values[i]));
+}
+
+function writeBackup_(ss, entries) {
+  var stamp = new Date(Math.floor(Date.now() / 1000) * 1000);   // this run, to the second
+  var sheet = ss.getSheetByName(BACKUP_TAB);
+  if (!sheet) sheet = ss.insertSheet(BACKUP_TAB, ss.getSheets().length);
+  var rows = [], last = sheet.getLastRow(), width = sheet.getLastColumn();
+  if (last >= 2 && width) {
+    var kept = sheet.getRange(2, 1, last - 1, width).getValues();
+    for (var k = 0; k < kept.length; k++) if (!rowIsEmpty_(kept[k])) rows.push(kept[k]);
+  }
+  for (var e = 0; e < entries.length; e++) rows.push([stamp].concat(entries[e]));
+
+  var runs = [], seen = {};
+  for (var r = 0; r < rows.length; r++) {
+    var key = stampKey_(rows[r][0]);
+    if (!seen[key]) { seen[key] = true; runs.push(key); }
+  }
+  var keep = {};
+  for (var q = Math.max(0, runs.length - BACKUP_RUNS); q < runs.length; q++) keep[runs[q]] = true;
+  var out = [BACKUP_HEADER.slice()], cols = BACKUP_HEADER.length;
+  for (var o = 0; o < rows.length; o++) {
+    if (!keep[stampKey_(rows[o][0])]) continue;
+    out.push(rows[o]);
+    cols = Math.max(cols, rows[o].length);
+  }
+  for (var p = 0; p < out.length; p++) while (out[p].length < cols) out[p].push('');
+  sheet.clearContents();
+  if (sheet.getMaxColumns() < cols) sheet.insertColumnsAfter(sheet.getMaxColumns(), cols - sheet.getMaxColumns());
+  if (sheet.getMaxRows() < out.length) sheet.insertRowsAfter(sheet.getMaxRows(), out.length - sheet.getMaxRows());
+  sheet.getRange(1, 1, out.length, cols).setValues(out);
+  sheet.hideSheet();
+}
+
+function stampKey_(value) {
+  return value instanceof Date ? 'd' + value.getTime() : 's' + String(value);
+}
+
+/** Rows as a list of lookup keys: null when a key column is missing or every key cell is empty. */
+function keyOf_(row, view, keys) {
+  var parts = [], any = false;
+  for (var k = 0; k < keys.length; k++) {
+    var at = view.cols[keys[k]];
+    if (at === undefined) return null;
+    var part = normText_(row[at]);
+    if (part !== '') any = true;
+    parts.push(part);
+  }
+  return any ? JSON.stringify(parts) : null;
+}
+
+/** A row laid out in another tab's columns, matched by header name. Never drops a value. */
+function toTarget_(row, from, to) {
+  var out = fillArray_(to.lastCol, '');
+  for (var o = 0; o < from.order.length; o++) {
+    var value = row[from.order[o].at];
+    if (isEmpty_(value)) continue;
+    var at = to.cols[from.order[o].key];
+    if (at === undefined) {
+      throw new Error('tab ' + from.name + ' column ' + from.order[o].name + ' has no match in ' +
+                      to.name + ' - refusing to drop data');
+    }
+    if (isEmpty_(out[at])) out[at] = value;
+  }
+  return out;
+}
+
+function viewNamed_(run, name) {
+  for (var v = 0; v < run.views.length; v++) if (run.views[v].name === name) return run.views[v];
+  return null;
 }
 
 function isHeld_(view, row) {

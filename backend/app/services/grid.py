@@ -60,6 +60,7 @@ class Tab:
     # 1-based column -> width in pixels; absent = the sheet default
     column_widths: dict[int, int] = field(default_factory=dict)
     banding: Banding | None = None
+    hidden: bool = False
 
     def __post_init__(self) -> None:
         width = max((len(r) for r in self.values), default=0)

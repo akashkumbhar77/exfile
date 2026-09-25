@@ -56,6 +56,7 @@ function runLocked_(event, loud) {
     report_(run.notes, true);
     return;
   }
+  if (run.backup.length) writeBackup_(ss, run.backup);   // before anything is removed or overwritten
   for (var w = 0; w < run.writes.length; w++) run.writes[w]();
   report_(run.notes, loud);
 }
@@ -87,7 +88,7 @@ function startRun_(ss) {
     if (found[sheets[i].getName()]) views.push(found[sheets[i].getName()]);
   }
   return {
-    ss: ss, today: todayStart_(ss), views: views, notes: [], writes: [], guardedRows: 0,
+    ss: ss, today: todayStart_(ss), views: views, notes: [], writes: [], backup: [], guardedRows: 0,
     failed: false,
     fail: function (note) { this.failed = true; this.notes.push(note); }
   };

@@ -44,6 +44,8 @@ class EvalContext:
     # tab -> last content row at run start. Formatting covers this whole region even after a
     # sort/move in the same run has vacated rows (legacy.gs formats its pre-sort range).
     extents: Mapping[str, int] = field(default_factory=dict)
+    # when the run started, in the sheet's timezone; stamps the backup tab's rows
+    now: datetime | None = None
 
 
 def _resolve_date(ref: str, today: date) -> datetime:

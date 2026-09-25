@@ -145,8 +145,14 @@ class SetBanding:
     banding: Banding | None  # replaces whatever banding the tab had; None = remove it
 
 
+@dataclass(frozen=True)
+class SetHidden:
+    tab: str
+    hidden: bool
+
+
 GridOp = (AddTab | EnsureSize | WriteValues | WriteFormats | SetValidation | SetProtection | DeleteTab
-          | WriteNumberFormats | SetColumnWidth | SetBanding)
+          | WriteNumberFormats | SetColumnWidth | SetBanding | SetHidden)
 
 
 def _a1(row: int, col: int, rows: int, cols: int) -> str:

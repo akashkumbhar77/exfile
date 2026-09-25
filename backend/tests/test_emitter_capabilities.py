@@ -48,30 +48,30 @@ def test_the_reference_config_emits_whole() -> None:
 
 
 def test_a_refused_rule_stops_the_whole_script() -> None:
-    """Three rules that emit plus one that does not yet: no script at all, rather than one that
-    quietly never runs the fourth rule."""
+    """Three rules that emit plus one that cannot (a clear with the backup tab off): no script at
+    all, rather than one that quietly never runs the fourth rule."""
     raw = load_reference_raw()
-    config = config_with([*raw["rules"], CLEAR_RULE], backup_tab=True)
-    codes = refusals(config)
-    assert codes == [("/rules/3", "unsupported_action")]
-    assert "not emitted yet" in emit(config).refusals[0].message
+    codes = refusals(config_with([*raw["rules"], CLEAR_RULE]))
+    assert codes == [("/guards/backup_tab", "backup_tab_required")]
 
 
-def test_move_and_copy_are_in_the_matrix_and_name_their_milestone() -> None:
-    assert capabilities.ACTIONS["move"].in_matrix and capabilities.ACTIONS["copy"].in_matrix
-    for action in ("move", "copy"):
-        support = capabilities.ACTIONS[action]
-        assert not support.emitted and "S7b" in support.note
+def test_every_action_in_the_matrix_is_emitted() -> None:
+    """P1: every action PATCH-004 B (as amended by PATCH-005 I.7) lists for this target has a
+    template. "Not yet" refusals are gone; what is left is "never" and "not like this"."""
+    assert all(s.in_matrix and s.emitted for s in capabilities.ACTIONS.values())
+    assert all(s.in_matrix and s.emitted for s in capabilities.TRIGGERS.values())
 
 
 def test_a_destructive_rule_requires_the_backup_tab() -> None:
-    clear_rule = CLEAR_RULE
-    without = refusals(config_with([clear_rule]))
-    assert ("/guards/backup_tab", "backup_tab_required") in without
-
-    with_backup = [c for c in refusals(config_with([clear_rule], backup_tab=True))
-                   if c[1] == "backup_tab_required"]
-    assert with_backup == [], "turning the backup tab on clears that refusal"
+    for action_rule in (CLEAR_RULE,
+                        {**CLEAR_RULE, "action": "dedupe", "key_columns": ["SR NO"], "when": None,
+                         "columns": None},
+                        {**CLEAR_RULE, "action": "move", "to_tab": "SPARES", "columns": None}):
+        rule = {k: v for k, v in action_rule.items() if v is not None}
+        without = refusals(config_with([rule]))
+        assert ("/guards/backup_tab", "backup_tab_required") in without, rule["action"]
+        result = emit(config_with([rule], backup_tab=True))
+        assert result.refusals == [] and result.script is not None, "the backup tab clears that refusal"
 
 
 @pytest.mark.parametrize(("cron", "refused"), [

@@ -35,10 +35,12 @@ reference config.
 - [x] **Presentation as intent** (owner ruling 2026-09-20): the evaluator models per-column
       number format (incl. `match_source`), per-column width, and banding on/off + theme on the
       data range. The mock records the calls; parity compares them.
-- [ ] Templates for validate (dropdowns), dedupe, clear, move, copy. Move, clear and dedupe force
+- [x] Templates for validate (dropdowns), dedupe, clear, move, copy. Move, clear and dedupe force
       the backup tab on (PATCH-005 I.7). Each with parity tests.
 - [ ] `docs/MOCK-DIVERGENCES.md` kept current (started 2026-09-25). Anything P4 exposes is back-ported into the mock
       as a test case.
+- [ ] Owner decisions from the templates: `KEEP_RUNS = 10` for the backup tab, and formulas in
+      rewritten rows (DECISIONS "P1: the remaining templates").
 - [ ] Close: merge `s7-numeric-conditions` to main.
 
 ## P1.5 — read the uploaded sheet
@@ -49,6 +51,9 @@ headerless column) read without crashing.
 
 - [ ] `.xlsx` → `Grid`, fidelity-tested against the reference workbook.
 - [ ] Header row / data start detected, or asked for when ambiguous.
+- [ ] The grid ends at the last row with content (like `getLastRow`); trailing formatted-but-empty
+      rows are not part of it (MOCK-DIVERGENCES #14).
+- [ ] Formula cells are detected and reported, so the readback can warn about rewritten rows.
 - [ ] Timezone is explicit input, never inferred.
 
 ## P2 — end to end on the command line
