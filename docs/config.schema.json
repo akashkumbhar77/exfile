@@ -1664,7 +1664,7 @@
     },
     "Presentation": {
       "additionalProperties": false,
-      "description": "Cosmetics for a consolidate target. The evaluator applies title/header colours; banding,\nwidths and date_format are not applied by the server engine yet (docs/BLOCKERS.md).",
+      "description": "How a consolidate target looks. All of it is evaluated (services/rules/consolidate.py):\ntitle and header colours, banding over the data rows, `date_format` on every column whose\nheader contains DATE, and column widths when the target tab is first created.",
       "properties": {
         "banding": {
           "anyOf": [
@@ -1703,7 +1703,7 @@
         },
         "date_format": {
           "default": "match_source",
-          "description": "'match_source' copies the first source dispatch-date format; otherwise a Sheets number format.",
+          "description": "Number format for every target column whose header contains DATE. 'match_source' copies the format of the first source's date column (sort_like's first date key); otherwise a Sheets number format.",
           "minLength": 1,
           "title": "Date Format",
           "type": "string"

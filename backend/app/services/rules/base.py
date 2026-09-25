@@ -62,6 +62,9 @@ class TabChange:
             or b.formats != self.after.formats
             or b.validations != self.after.validations
             or b.protected != self.after.protected
+            or b.number_formats != self.after.number_formats
+            or b.column_widths != self.after.column_widths
+            or b.banding != self.after.banding
         )
 
 

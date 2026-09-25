@@ -20,9 +20,12 @@ from app.adapters.base import (
     EnsureSize,
     Grid,
     GridOp,
+    SetBanding,
+    SetColumnWidth,
     SetProtection,
     SetValidation,
     WriteFormats,
+    WriteNumberFormats,
     WriteValues,
 )
 from app.core.redaction import Redacted
@@ -127,10 +130,33 @@ def diff_workbooks(base: Grid, target: Workbook) -> list[GridOp]:
         if (before.protected if before else False) != after.protected:
             ops.append(SetProtection(after.name, after.protected))
 
+        ops.extend(_presentation_ops(before, after, height, width))
+
     target_names = set(target.names())
     for t in before_wb.tabs:
         if t.name not in target_names:
             ops.append(DeleteTab(t.name))
+    return ops
+
+
+def _presentation_ops(before: Tab | None, after: Tab, height: int, width: int) -> list[GridOp]:
+    """Number formats, widths and banding: written only where they differ."""
+    ops: list[GridOp] = []
+    old_nf = before.number_formats if before else {}
+
+    def nf_row(tab_nf: dict[tuple[int, int], str], r: int) -> list[str | None]:
+        return [tab_nf.get((r + 1, c + 1)) for c in range(width)]
+
+    nf_rows = _changed_rows(height, lambda r: nf_row(old_nf, r) != nf_row(after.number_formats, r))
+    for s, e in _runs(nf_rows):
+        ops.append(WriteNumberFormats(after.name, s + 1, 1,
+                                      tuple(tuple(nf_row(after.number_formats, r)) for r in range(s, e))))
+    old_w = before.column_widths if before else {}
+    for col in sorted(after.column_widths):
+        if old_w.get(col) != after.column_widths[col]:
+            ops.append(SetColumnWidth(after.name, col, after.column_widths[col]))
+    if (before.banding if before else None) != after.banding:
+        ops.append(SetBanding(after.name, after.banding))
     return ops
 
 
@@ -142,9 +168,11 @@ class OpSummary:
     cells_recolored: int = 0
     validations: int = 0
     structural: int = 0
+    presentation: int = 0  # number-format runs, column widths and banding changes
 
     def total(self) -> int:
-        return self.cells_written + self.cells_recolored + self.validations + self.structural
+        return (self.cells_written + self.cells_recolored + self.validations + self.structural
+                + self.presentation)
 
 
 def summarize_ops(base: Grid, ops: Sequence[GridOp]) -> dict[str, OpSummary]:
@@ -163,6 +191,8 @@ def summarize_ops(base: Grid, ops: Sequence[GridOp]) -> dict[str, OpSummary]:
                     s.cells_recolored += sum(1 for a, b in zip(old, row) if a != b)
             case SetValidation():
                 s.validations += 1
+            case WriteNumberFormats() | SetColumnWidth() | SetBanding():
+                s.presentation += 1
             case _:
                 s.structural += 1
     return out

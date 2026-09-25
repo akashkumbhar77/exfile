@@ -66,6 +66,7 @@ from app.services.describe import (
 )
 from app.services.grid import Workbook
 from app.services.headers import canon_key
+from app.services.rules.consolidate import FALLBACK_DATE_FORMAT, column_width_map
 from app.services.validator import ValidationIssue
 
 PRODUCT = "Sheets Automation"
@@ -454,7 +455,78 @@ def consolidate_function(rule: ConsolidateRule, config: ConfigSpec, common: dict
         data_start=config.data_start_row,
         locking="  lockTab_(sheet);" if rule.lock else "  // this target is left unlocked",
         formatting=_consolidate_formatting(rule, config),
+        date_format=consolidate_date_format(rule, config),
+        presentation=consolidate_presentation(rule, config),
     )
+
+
+def consolidate_date_format(rule: ConsolidateRule, config: ConfigSpec) -> str:
+    """Planned with the rows: the number format the target's DATE columns get."""
+    fmt = rule.presentation.date_format
+    if fmt != "match_source":
+        return f"  var dateFormat = {js_string(fmt)};"
+    sort_rule = config.rule(rule.sort_like) if rule.sort_like else None
+    date_key = None
+    if isinstance(sort_rule, SortRule):
+        date_key = next((canon_key(k.column) for k in sort_rule.keys if k.type == "date"), None)
+    if date_key is not None:
+        which = f"its {date_key} column"
+        find = f"    var dateAt = views[f].cols[{js_string(date_key)}];"
+    else:
+        which = "its first column with DATE in the name"
+        find = ("    var dateAt = undefined;\n"
+                "    for (var o = 0; o < views[f].order.length && dateAt === undefined; o++) {\n"
+                "      if (views[f].order[o].key.indexOf('DATE') !== -1) dateAt = views[f].order[o].at;\n"
+                "    }")
+    return "\n".join([
+        f"  // Dates look the way they do in the first source with data rows: {which}.",
+        f"  var dateFormat = {js_string(FALLBACK_DATE_FORMAT)};",
+        "  for (var f = 0; f < views.length; f++) {",
+        "    if (!views[f].rowCount) continue;",
+        find,
+        "    if (dateAt === undefined) continue;",
+        "    dateFormat = views[f].sheet.getRange(DATA_START_ROW, dateAt + 1).getNumberFormat();",
+        "    break;",
+        "  }",
+    ])
+
+
+def consolidate_presentation(rule: ConsolidateRule, config: ConfigSpec) -> str:
+    """Banding and date formats on the data rows; widths only when the tab is new."""
+    p = rule.presentation
+    ds = config.data_start_row
+    lines = ["  if (rows.length) {"]
+    if p.banding:
+        lines += [f"    sheet.getRange({ds}, 1, rows.length, allHeaders.length)",
+                  f"         .applyRowBanding(SpreadsheetApp.BandingTheme.{p.banding}, false, false);"]
+    else:
+        lines.append("    // no banding")
+    lines += [
+        "    for (var dc = 0; dc < allHeaders.length; dc++) {   // every column with DATE in its name",
+        "      if (String(allHeaders[dc]).toUpperCase().indexOf('DATE') !== -1) {",
+        f"        sheet.getRange({ds}, dc + 1, rows.length, 1).setNumberFormat(dateFormat);",
+        "      }",
+        "    }",
+        "  }",
+    ]
+    entries = [f"{js_string(k)}: {v}" for k, v in column_width_map(p).items()]
+    table: list[str] = []
+    for entry in entries:  # a few per line, so the table reads like one
+        if table and len(table[-1]) + len(entry) < 92:
+            table[-1] += f", {entry}"
+        else:
+            table.append(f"      {entry}")
+    lines += [
+        "  if (created) {        // widths are set once; after that, widths you drag are kept",
+        "    var widths = {" + ("\n" + ",\n".join(table) + "\n    " if table else "") + "};",
+        "    for (var wc = 0; wc < allHeaders.length; wc++) {",
+        "      var key = String(allHeaders[wc]).trim().toUpperCase();",
+        "      sheet.setColumnWidth(wc + 1, Object.prototype.hasOwnProperty.call(widths, key) "
+        f"? widths[key] : {p.default_column_width});",
+        "    }",
+        "  }",
+    ]
+    return "\n".join(lines)
 
 
 def _consolidate_formatting(rule: ConsolidateRule, config: ConfigSpec) -> str:

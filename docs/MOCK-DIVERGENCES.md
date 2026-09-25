@@ -24,6 +24,9 @@ mock change plus a test.
 | 7 | `globalThis` | Node's global | V8 runtime supports it (ES2020) | Used to detect orphan triggers whose function no longer exists. | to verify at P4 |
 | 8 | Protection | `protected: true/false` on the tab | A protection with an editor list; the owner stays an editor, and "warning only" is a separate mode | `lockTab_` is checked offline only for presence. That the owner can still run the script against a locked target is unproven. | to verify at P4 |
 | 9 | Quotas and limits | None, except the 9 KB script-property limit | 6-minute execution limit, a daily trigger-runtime quota, 20 triggers per user per script | Large sheets could exceed 6 minutes; the one-minute debounce trigger uses a small, steady share of the daily quota. Not modelled. | open |
+| 10 | `Range.getNumberFormat` on an unformatted cell | Returns `General` | Believed to return `General` | The evaluator treats an absent format as `General`, so `match_source` copies `General` from a source nobody formatted. If Sheets reports something else, both the evaluator default and the mock change together. | to verify at P4 |
+| 11 | `applyRowBanding` over an existing banding | Adds a second banding silently | Throws ("You cannot add alternating colors to a range that already has alternating colors") | The consolidate write removes every banding on the target before rebuilding it; `test_rebuilding_a_banded_summary_leaves_exactly_one_banding` holds that. The mock was not changed on belief alone: the P4 rule applies. | open |
+| 12 | `Sheet.clear()` and bandings | Keeps bandings (clears values and formats) | Unconfirmed whether `clear()` removes bandings | Irrelevant to the script, which removes bandings explicitly first. | to verify at P4 |
 
 ## Emitter bugs found by trigger wiring (not mock divergences, recorded for the P4 reader)
 

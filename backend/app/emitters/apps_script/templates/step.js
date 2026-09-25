@@ -1,4 +1,7 @@
-/** Rule ${number} (${rule_id}) on ${tab_note}: planned in memory, written at the end of the run. */
+/**
+ * Rule ${number} (${rule_id}) on ${tab_note}.
+ * Planned in memory; written only at the end of the run, once every rule has succeeded.
+ */
 function ${step}(run, scope) {
   for (var v = 0; v < run.views.length; v++) {
     var view = run.views[v], name = view.name;

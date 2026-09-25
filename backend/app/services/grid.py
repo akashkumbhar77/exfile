@@ -4,6 +4,10 @@ Mirrors what the Sheets API / Apps Script returns: a rectangular value grid per
 tab plus position-bound formatting (formats do NOT travel with values on a
 sort, exactly like `range.setValues`; they DO shift when rows are inserted or
 deleted). Rows and columns are 1-based in the public helpers.
+
+Presentation is modelled as intent, not rendering (owner ruling 2026-09-20): a cell's number
+format, a column's width, and row banding with its theme on a range. Fonts, borders, merges and
+alignment are rendering and are not modelled.
 """
 
 from __future__ import annotations
@@ -29,6 +33,16 @@ DEFAULT_FORMAT = CellFormat()
 
 
 @dataclass(frozen=True)
+class Banding:
+    """Alternating row colours (no header or footer band) over a 1-based block of rows."""
+
+    theme: str  # a Sheets BandingTheme name, e.g. LIGHT_GREY
+    row: int
+    rows: int
+    cols: int  # from column 1
+
+
+@dataclass(frozen=True)
 class DataValidation:
     values: tuple[str, ...]
     allow_invalid: bool = False
@@ -41,6 +55,11 @@ class Tab:
     formats: list[list[CellFormat]] = field(default_factory=list)
     validations: dict[tuple[int, int], DataValidation] = field(default_factory=dict)
     protected: bool = False
+    # 1-based (row, col) -> Sheets number format pattern; absent = the sheet default ("General")
+    number_formats: dict[tuple[int, int], str] = field(default_factory=dict)
+    # 1-based column -> width in pixels; absent = the sheet default
+    column_widths: dict[int, int] = field(default_factory=dict)
+    banding: Banding | None = None
 
     def __post_init__(self) -> None:
         width = max((len(r) for r in self.values), default=0)
@@ -93,6 +112,9 @@ class Tab:
         self.validations = {
             (new_pos[r], c): v for (r, c), v in self.validations.items() if r in new_pos
         }
+        self.number_formats = {
+            (new_pos[r], c): f for (r, c), f in self.number_formats.items() if r in new_pos
+        }
 
     def insert_rows(self, before: int, rows: list[Row]) -> None:
         """Insert rows so the first lands at 1-based `before`; rows at/after it shift down."""
@@ -107,6 +129,9 @@ class Tab:
         n = len(rows)
         self.validations = {
             ((r + n if r >= before else r), c): v for (r, c), v in self.validations.items()
+        }
+        self.number_formats = {
+            ((r + n if r >= before else r), c): f for (r, c), f in self.number_formats.items()
         }
 
     def clone(self) -> Tab:

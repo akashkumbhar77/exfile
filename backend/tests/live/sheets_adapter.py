@@ -328,6 +328,10 @@ class SheetsAdapter:
                                 reqs.append({"deleteProtectedRange": {"protectedRangeId": p["protectedRangeId"]}})
                 case DeleteTab():
                     reqs.append({"deleteSheet": {"sheetId": ids[op.tab]}})
+                case _:
+                    # Presentation ops arrived after the managed tier was parked; this fenced
+                    # adapter is P4's read path, so it refuses rather than silently skipping them.
+                    raise NotImplementedError(f"{type(op).__name__} is not written by the test adapter")
         return reqs, cells, fmts
 
     @staticmethod

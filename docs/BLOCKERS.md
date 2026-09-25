@@ -41,7 +41,10 @@ worker running on the host. Both sheets were registered with the owner's approva
 Open for the owner: confirm the author-based self-write filter (a deviation from A.3's
 literal mechanism).
 
-## RULED (owner, 2026-09-20), IN PROGRESS: consolidate `presentation`
+## RESOLVED (2026-09-25): consolidate `presentation`
+Done as ruled below: evaluator, emitter, mock and parity (DECISIONS "P1: presentation as intent").
+
+### The ruling (owner, 2026-09-20)
 **Ruling:** the evaluator learns all three - modelled as intent, not rendering: per-column number
 format, per-column width, and banding on/off plus theme on the data range. The mock records
 those calls the way it records fills, and parity compares them like any other attribute. They

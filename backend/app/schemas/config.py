@@ -439,8 +439,9 @@ BandingTheme = Literal[
 
 
 class Presentation(_Strict):
-    """Cosmetics for a consolidate target. The evaluator applies title/header colours; banding,
-    widths and date_format are not applied by the server engine yet (docs/BLOCKERS.md)."""
+    """How a consolidate target looks. All of it is evaluated (services/rules/consolidate.py):
+    title and header colours, banding over the data rows, `date_format` on every column whose
+    header contains DATE, and column widths when the target tab is first created."""
 
     title: str | None = None
     title_font: HexColor = "#FFFFFF"
@@ -452,7 +453,9 @@ class Presentation(_Strict):
     default_column_width: Annotated[int, Field(ge=10, le=2000)] = 130
     date_format: Annotated[str, Field(min_length=1)] = Field(
         default="match_source",
-        description="'match_source' copies the first source dispatch-date format; otherwise a Sheets number format.",
+        description=("Number format for every target column whose header contains DATE. "
+                     "'match_source' copies the format of the first source's date column "
+                     "(sort_like's first date key); otherwise a Sheets number format."),
     )
 
 

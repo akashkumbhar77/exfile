@@ -298,7 +298,10 @@ def test_renaming_an_existing_summary_is_reviewed_once(env: Any) -> None:
     from app.services.planning import plan_grid
     from app.services.runner import RunEvent as _E
     plan = plan_grid(adapter.read_grid(SID), proposed(recorder)[0], _E("change"), source_ref=SID)
-    adapter.write_ops(SID, plan.ops)
+    # only SUMMARY's values matter here; the test adapter does not write presentation
+    from app.adapters.base import SetBanding, SetColumnWidth, WriteNumberFormats
+    adapter.write_ops(SID, [op for op in plan.ops
+                            if not isinstance(op, SetBanding | SetColumnWidth | WriteNumberFormats)])
 
     renamed = compiled_reference()
     renamed["canonical_headers"] = [c if c["canonical"] != "FREEZE?" else {**c, "canonical": "FROZEN"}

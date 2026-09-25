@@ -48,17 +48,23 @@ ${derived_fill}
     }
   }
 ${sorting}
+${date_format}
   return { rule: '${rule_id}', action: 'consolidate', tab: ${target}, rowsAffected: rows.length,
-           apply: function () { writeConsolidated_${fn}(run.ss, run.today, rows, allHeaders); } };
+           apply: function () {
+             writeConsolidated_${fn}(run.ss, run.today, rows, allHeaders, dateFormat);
+           } };
 }
 
 /** Rebuilds the target tab from the planned rows: only called once every rule has succeeded. */
-function writeConsolidated_${fn}(ss, today, rows, allHeaders) {
+function writeConsolidated_${fn}(ss, today, rows, allHeaders, dateFormat) {
+  var created = !ss.getSheetByName(${target});
   var sheet = targetSheet_(ss, ${target});
   var first = sheet.getRange(1, 1);
   var banner = { value: first.getValues()[0][0], font: first.getFontColors()[0][0],
                  background: first.getBackgrounds()[0][0] };
   var wanted = ${data_start} - 1 + rows.length;
+  var oldBands = sheet.getBandings();
+  for (var ob = 0; ob < oldBands.length; ob++) oldBands[ob].remove();
   sheet.clear();
   if (sheet.getMaxRows() < Math.max(wanted, 1)) sheet.insertRowsAfter(sheet.getMaxRows(), wanted - sheet.getMaxRows());
   if (sheet.getMaxColumns() < allHeaders.length) {
@@ -70,6 +76,7 @@ ${title}
   headerRange.setFontColors([fillArray_(allHeaders.length, ${header_font})]);
   headerRange.setBackgrounds([fillArray_(allHeaders.length, ${header_background})]);
   if (rows.length) sheet.getRange(${data_start}, 1, rows.length, allHeaders.length).setValues(rows);
+${presentation}
 ${locking}
 ${formatting}
 }

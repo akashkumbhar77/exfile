@@ -32,7 +32,7 @@ reference config.
       event kind is parity-tested against the evaluator's rule selection
       (`tests/test_apps_script_triggers.py`).
 - [x] Reference config emits whole; D.4 proven offline.
-- [ ] **Presentation as intent** (owner ruling 2026-09-20): the evaluator models per-column
+- [x] **Presentation as intent** (owner ruling 2026-09-20): the evaluator models per-column
       number format (incl. `match_source`), per-column width, and banding on/off + theme on the
       data range. The mock records the calls; parity compares them.
 - [ ] Templates for validate (dropdowns), dedupe, clear, move, copy. Move, clear and dedupe force
@@ -81,7 +81,8 @@ Exit: one page does P2's flow, and revising the instruction is fast and obvious.
 Exit (PATCH-004 D.3): the generated script, installed by hand in a real test spreadsheet,
 reproduces the evaluator's preview exactly.
 
-- [ ] Read back through the fenced, test-only Google path (I.1).
+- [ ] Read back through the fenced, test-only Google path (I.1), including number formats,
+      column widths and banded ranges, so presentation is compared live, as it is offline.
 - [ ] Every difference becomes a mock test case and an entry in MOCK-DIVERGENCES.md.
 
 ## P5 — the gauntlet

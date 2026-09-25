@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.core.redaction import Redacted
-from app.services.grid import CellFormat, CellValue, DataValidation, Workbook, col_letter
+from app.services.grid import Banding, CellFormat, CellValue, DataValidation, Workbook, col_letter
 
 SourceRef = str  # Sheets: the spreadsheet id
 
@@ -124,7 +124,29 @@ class DeleteTab:
     tab: str
 
 
-GridOp = AddTab | EnsureSize | WriteValues | WriteFormats | SetValidation | SetProtection | DeleteTab
+@dataclass(frozen=True)
+class WriteNumberFormats:
+    tab: str
+    row: int
+    col: int
+    formats: tuple[tuple[str | None, ...], ...]  # None = back to the sheet default
+
+
+@dataclass(frozen=True)
+class SetColumnWidth:
+    tab: str
+    col: int
+    width: int
+
+
+@dataclass(frozen=True)
+class SetBanding:
+    tab: str
+    banding: Banding | None  # replaces whatever banding the tab had; None = remove it
+
+
+GridOp = (AddTab | EnsureSize | WriteValues | WriteFormats | SetValidation | SetProtection | DeleteTab
+          | WriteNumberFormats | SetColumnWidth | SetBanding)
 
 
 def _a1(row: int, col: int, rows: int, cols: int) -> str:

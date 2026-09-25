@@ -25,7 +25,7 @@ from app.emitters.apps_script import ENTRY_POINT, emit
 from app.schemas.config import ConfigSpec
 from app.services.conditions import EvalContext
 from app.services.executor import execute_run
-from app.services.grid import Workbook
+from app.services.grid import Tab, Workbook
 from app.services.preflight import schema_hashes_for
 from app.services.runner import RunEvent
 from tests.conftest import load_reference_raw
@@ -65,6 +65,20 @@ def compare_grids(py_workbook: Workbook, response: dict[str, Any], header_row: i
         got = tabs[tab.name]
         assert _engine_values(got) == _py_values(tab), f"{label}: {tab.name} values"
         _compare_formats(tab, got, header_row, f"{label}: {tab.name}")
+        compare_presentation(tab, got, f"{label}: {tab.name}")
+
+
+def compare_presentation(tab: Tab, got: dict[str, Any], label: str) -> None:
+    """Number formats per cell, widths per column, banding theme and range: as intent (2026-09-20)."""
+    formats = {(r + 1, c + 1): cell["nf"] for r, row in enumerate(got["cells"])
+               for c, cell in enumerate(row) if cell.get("nf")}
+    assert formats == tab.number_formats, f"{label}: number formats"
+    assert {int(c): w for c, w in got["colWidths"].items()} == tab.column_widths, f"{label}: column widths"
+    bands = [(b["theme"], b["row"], b["col"], b["nr"], b["nc"], b["header"], b["footer"])
+             for b in got["bandings"]]
+    b = tab.banding
+    assert bands == ([] if b is None else [(b.theme, b.row, 1, b.rows, b.cols, False, False)]), \
+        f"{label}: banding"
 
 
 def config_header_row() -> int:
@@ -155,7 +169,7 @@ def test_a_renamed_header_stops_the_whole_run_in_both_targets() -> None:
 
 def _decode_workbook(response: dict[str, Any]) -> Workbook:
     """Rebuild a Workbook from the mock's dump, so one run's output can feed the next."""
-    from app.services.grid import CellFormat, Tab
+    from app.services.grid import Banding, CellFormat
 
     tabs = []
     for dumped in response["tabs"]:
@@ -165,6 +179,12 @@ def _decode_workbook(response: dict[str, Any]) -> Workbook:
             for c, cell in enumerate(row):
                 tab.formats[r][c] = CellFormat(font=cell["fc"], background=cell["bg"],
                                                strike=cell["fl"] == "line-through")
+                if cell.get("nf"):
+                    tab.number_formats[(r + 1, c + 1)] = cell["nf"]
+        tab.column_widths = {int(c): w for c, w in dumped["colWidths"].items()}
+        tab.protected = dumped["protected"]
+        for b in dumped["bandings"]:
+            tab.banding = Banding(b["theme"], b["row"], b["nr"], b["nc"])
         tabs.append(tab)
     return Workbook(tabs)
 
@@ -178,3 +198,114 @@ def _decode_cell(value: Any) -> Any:
         if "$datetime" in value:
             return datetime.fromisoformat(value["$datetime"])
     return "" if value is None else value
+
+
+# ---------------------------------------------------------------- presentation as intent
+
+def with_date_formats(workbook: Workbook) -> Workbook:
+    """The real workbook's sources format their dispatch dates, and not alike."""
+    for name, pattern in (("MACHINES", "d/m/yyyy"), ("SPARES", "dd-mmm-yyyy")):
+        tab = workbook.tab(name)
+        assert tab is not None
+        headers = [str(h).strip().upper() for h in tab.values[config_header_row() - 1]]
+        col = next(i for i, h in enumerate(headers, start=1) if "DISPATCH DATE" in h)
+        for row in range(config_header_row() + 1, tab.height + 1):
+            tab.number_formats[(row, col)] = pattern
+    return workbook
+
+
+def run_both(raw: dict[str, Any], workbook: Workbook) -> tuple[Workbook, dict[str, Any]]:
+    config = ConfigSpec.model_validate(raw)
+    result = emit(config, workbook=workbook)
+    assert result.ok and result.script is not None, [r.message for r in result.refusals]
+    py = execute_run(config, workbook, RunEvent.manual(), EvalContext(run_id="present", today=TODAY))
+    assert py.plan.status == "OK"
+    response = run_generated(result.script, workbook)
+    compare_grids(py.workbook, response, config.header_row, "presentation")
+    return py.workbook, response
+
+
+def summary_formats(workbook: Workbook) -> dict[str, set[str]]:
+    tab = workbook.tab("SUMMARY")
+    assert tab is not None
+    headers = tab.values[config_header_row() - 1]
+    out: dict[str, set[str]] = {}
+    for (_, c), fmt in tab.number_formats.items():
+        out.setdefault(str(headers[c - 1]).upper(), set()).add(fmt)
+    return out
+
+
+def test_summary_dates_match_the_first_source_and_the_rows_are_banded() -> None:
+    py, _ = run_both(load_reference_raw(), with_date_formats(reference_workbook.build()))
+    assert summary_formats(py) == {"DISPATCH DATE": {"d/m/yyyy"}}
+    summary = py.tab("SUMMARY")
+    assert summary is not None and summary.banding is not None
+    assert (summary.banding.theme, summary.banding.row) == ("LIGHT_GREY", 3)
+    assert summary.column_widths[1] == 120, "SOURCE SHEET's configured width, on a new tab"
+
+
+def test_without_a_date_sort_key_the_first_date_header_decides() -> None:
+    """No sort_like: match_source falls back to the first source's first header containing DATE."""
+    raw = load_reference_raw()
+    raw["rules"][2]["sort_like"] = None
+    workbook = with_date_formats(reference_workbook.build())
+    machines = workbook.tab("MACHINES")
+    assert machines is not None
+    machines.number_formats = {k: "yyyy-mm-dd" for k in machines.number_formats}
+    py, _ = run_both(raw, workbook)
+    assert summary_formats(py)["DISPATCH DATE"] == {"yyyy-mm-dd"}
+
+
+def test_an_explicit_date_format_and_no_banding() -> None:
+    raw = load_reference_raw()
+    raw["rules"][2]["presentation"] |= {"date_format": "dd mmm yyyy", "banding": None}
+    py, response = run_both(raw, with_date_formats(reference_workbook.build()))
+    assert summary_formats(py)["DISPATCH DATE"] == {"dd mmm yyyy"}
+    assert next(t for t in response["tabs"] if t["name"] == "SUMMARY")["bandings"] == []
+
+
+def test_an_existing_summary_keeps_the_widths_its_owner_set() -> None:
+    """Widths are set when the target is created; after that, dragged widths are the owner's."""
+    workbook = reference_workbook.build()
+    existing = Tab("SUMMARY", [["OLD TITLE"], ["SOURCE SHEET"]])
+    existing.column_widths = {1: 333, 2: 44}
+    workbook.tabs.insert(0, existing)
+    py, _ = run_both(load_reference_raw(), workbook)
+    summary = py.tab("SUMMARY")
+    assert summary is not None and summary.column_widths == {1: 333, 2: 44}
+
+
+def test_a_source_without_data_rows_does_not_decide_the_date_format() -> None:
+    """MACHINES keeps a formatted but empty dispatch column; the first source WITH rows decides."""
+    workbook = with_date_formats(reference_workbook.build())
+    machines = workbook.tab("MACHINES")
+    assert machines is not None
+    machines.values = machines.values[:config_header_row()]
+    machines.formats = machines.formats[:config_header_row()]
+    machines.number_formats = {k: f for k, f in machines.number_formats.items() if k[0] == config_header_row() + 1}
+    py, _ = run_both(load_reference_raw(), workbook)
+    assert summary_formats(py)["DISPATCH DATE"] == {"dd-mmm-yyyy"}
+
+
+def test_rebuilding_a_banded_summary_leaves_exactly_one_banding() -> None:
+    """The second run finds the first run's banding on SUMMARY and must replace it, not stack."""
+    config = ConfigSpec.model_validate(load_reference_raw())
+    result = emit(config, workbook=reference_workbook.build())
+    assert result.script is not None
+    first = run_generated(result.script, with_date_formats(reference_workbook.build()))
+    second = run_generated(result.script, _decode_workbook(first))
+    assert second["tabs"] == first["tabs"], "a second run over its own output changes nothing"
+
+
+def test_only_headers_containing_date_get_the_date_format() -> None:
+    """'DATA OWNER' contains DAT but not DATE, and is left alone."""
+    workbook = with_date_formats(reference_workbook.build())
+    spares = workbook.tab("SPARES")
+    assert spares is not None
+    spares.ensure_size(spares.height, spares.width + 1)
+    spares.values[config_header_row() - 1][spares.width - 1] = "DATA OWNER"
+    spares.values[config_header_row()][spares.width - 1] = "Ravi"
+    raw = load_reference_raw()
+    raw["schema_hashes"] = schema_hashes_for(workbook, list(raw["schema_hashes"]), raw["header_row"])
+    py, _ = run_both(raw, workbook)
+    assert set(summary_formats(py)) == {"DISPATCH DATE"}

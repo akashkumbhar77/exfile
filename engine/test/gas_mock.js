@@ -532,6 +532,8 @@
           if (f.background !== undefined) cell.bg = f.background ? f.background.toLowerCase() : null;
           if (f.strike !== undefined) cell.fl = f.strike ? 'line-through' : 'none';
         });
+        Object.keys(t.column_widths || {}).forEach(function (c) { sh._colWidths[c] = t.column_widths[c]; });
+        (t.bandings || []).forEach(function (b) { sh._bandings.push(b); });
       });
     },
     edit: function (tab, row, col, value) {

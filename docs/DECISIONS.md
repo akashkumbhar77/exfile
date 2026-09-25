@@ -942,3 +942,37 @@ Each was raised in the pre-pivot review and accepted; they are now section I of 
   `docs/MOCK-DIVERGENCES.md`, with the owner's back-port rule.
 - **Environment note:** Windows Application Control now blocks the venv's `python.exe` launcher.
   Tests run with the base uv interpreter plus the venv's site-packages on `PYTHONPATH`.
+
+### P1: presentation as intent (2026-09-25)
+Implements the owner's ruling of 2026-09-20: the evaluator learns banding, widths and date formats.
+- **Model.** `Tab` gained three intent attributes: `number_formats` (per cell, shifting with row
+  inserts and deletes as validations do), `column_widths` (per column), and `banding` (theme
+  plus the block of rows it covers). Fonts, borders, merges and alignment are rendering and stay
+  unmodelled. `TabChange.changed` and the preview diff (`WriteNumberFormats`, `SetColumnWidth`,
+  `SetBanding`, counted as `presentation` in `OpSummary`) include them, so the preview cannot
+  silently drop a presentation change.
+- **Semantics** follow what Engine.gs and legacy.gs did, now written into the schema description
+  and `rules/consolidate.py`:
+  - banding over the data rows, with no header or footer band, and none when there are no rows
+  - `date_format` on every target column whose header contains DATE
+  - `match_source` copies the format of the first data cell of the date column in the first
+    source that has data rows. The date column is the `sort_like` rule's first date key, else the
+    source's first header containing DATE. With no such source it falls back to d/m/yyyy.
+  - widths are set only when the target tab is created, from `column_widths` (keys compared
+    trimmed and case-insensitively; a key already in canonical form wins a collision) or
+    `default_column_width`; after that the owner's own widths are kept.
+- **Open for the owner:** "a header containing DATE" is a name-based rule inherited from legacy,
+  not a declared column type. It matches the reference workbook exactly (DISPATCH DATE, INVOICE
+  DATE), but a column called "UPDATED" would also get a date format, since it contains "DATE".
+  A typed alternative would be a `date_columns` list in `Presentation`: additive, not breaking.
+  Kept as is until ruled.
+- **Script.** The date format is planned with the rows (read from the source's first data cell);
+  the write phase removes old bandings before rebuilding, bands the data rows, formats the date
+  columns, and sets widths only on a newly created target.
+- **Parity** compares number formats per cell, widths per column, and the banding's theme and
+  range on every tab, in every parity test. Seven presentation tests were added, each
+  shown to fail under a targeted mutation of the script. Six evaluator unit tests were added.
+  The mock loader now accepts column widths and bandings; the golden-file suite still passes
+  (27/27).
+- The fenced live adapter refuses the new ops by name instead of skipping them. The one offline
+  test that drove it filters them out explicitly, since it only needs SUMMARY's values.

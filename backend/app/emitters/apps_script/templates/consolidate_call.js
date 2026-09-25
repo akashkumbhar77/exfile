@@ -1,4 +1,7 @@
-/** Rule ${number} (${rule_id}) builds ${target_note} from ${tab_note}; written at the end of the run. */
+/**
+ * Rule ${number} (${rule_id}) builds ${target_note} from ${tab_note}.
+ * Planned in memory; written only at the end of the run, once every rule has succeeded.
+ */
 function ${step}(run, scope) {
   try {
     var ${var_name} = ${fn}(run);

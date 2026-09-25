@@ -323,7 +323,18 @@ def _encode_workbook(wb: Workbook) -> dict[str, Any]:
                 if f != CellFormat():
                     formats.append({"row": r + 1, "col": c + 1, "font": f.font, "background": f.background,
                                     "strike": f.strike})
-        tabs.append({"name": t.name, "rows": [[encode_cell(v) for v in row] for row in t.values], "formats": formats})
+        tab: dict[str, Any] = {"name": t.name, "rows": [[encode_cell(v) for v in row] for row in t.values],
+                               "formats": formats}
+        if t.number_formats:
+            tab["number_formats"] = [{"row": r, "col": c, "rows": 1, "format": f}
+                                     for (r, c), f in sorted(t.number_formats.items())]
+        if t.column_widths:
+            tab["column_widths"] = {str(c): w for c, w in t.column_widths.items()}
+        if t.banding is not None:
+            b = t.banding
+            tab["bandings"] = [{"row": b.row, "col": 1, "nr": b.rows, "nc": b.cols, "theme": b.theme,
+                                "header": False, "footer": False}]
+        tabs.append(tab)
     return {"tabs": tabs}
 
 
